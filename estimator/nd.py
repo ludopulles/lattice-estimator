@@ -186,6 +186,10 @@ class NoiseDistribution:
         return (self.bounds[1] - self.bounds[0]) < oo
 
     @property
+    def is_Gaussian_like(self):
+        return False
+
+    @property
     def is_sparse(self):
         """
         Whether the density of the distribution is < 1/2.
