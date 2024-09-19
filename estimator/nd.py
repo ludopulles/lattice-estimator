@@ -14,14 +14,14 @@ def stddevf(sigma):
 
     EXAMPLE::
 
-        >>> from estimator.nd import stddevf
-        >>> stddevf(64.0)
+        >>> from estimator import *
+        >>> ND.stddevf(64.0)
         25.532...
 
-        >>> stddevf(64)
+        >>> ND.stddevf(64)
         25.532...
 
-        >>> stddevf(RealField(256)(64)).prec()
+        >>> ND.stddevf(RealField(256)(64)).prec()
         256
     """
     try:
@@ -43,16 +43,16 @@ def sigmaf(stddev):
 
     EXAMPLE::
 
-        >>> from estimator.nd import stddevf, sigmaf
+        >>> from estimator import *
         >>> n = 64.0
-        >>> sigmaf(stddevf(n))
+        >>> ND.sigmaf(ND.stddevf(n))
         64.000...
 
-        >>> sigmaf(RealField(128)(1.0))
+        >>> ND.sigmaf(RealField(128)(1.0))
         2.5066282746310005024157652848110452530
-        >>> sigmaf(1.0)
+        >>> ND.sigmaf(1.0)
         2.506628274631...
-        >>> sigmaf(1)
+        >>> ND.sigmaf(1)
         2.506628274631...
     """
     RR = parent(stddev)
@@ -219,8 +219,8 @@ class DiscreteGaussian(NoiseDistribution):
 
     EXAMPLE::
 
-        >>> from estimator.nd import DiscreteGaussian
-        >>> DiscreteGaussian(3.0, 1.0)
+        >>> from estimator import *
+        >>> ND.DiscreteGaussian(3.0, 1.0)
         D(σ=3.00, μ=1.00)
     """
     # cut-off for Gaussian distributions
@@ -263,18 +263,20 @@ class DiscreteGaussian(NoiseDistribution):
         return (2 * b + 1)**n
 
 
-class DiscreteGaussianAlpha(DiscreteGaussian):
+def DiscreteGaussianAlpha(alpha, q, mean=0, n=None):
     """
     A discrete Gaussian distribution with standard deviation α⋅q/√(2π) per component.
 
     EXAMPLE::
 
-        >>> from estimator.nd import DiscreteGaussianAlpha
-        >>> DiscreteGaussianAlpha(0.001, 2048)
+        >>> from estimator import *
+        >>> alpha, q = 0.001, 2048
+        >>> ND.DiscreteGaussianAlpha(alpha, q)
         D(σ=0.82)
+        >>> ND.DiscreteGaussianAlpha(alpha, q) == ND.DiscreteGaussian(ND.stddevf(alpha * q))
+        True
     """
-    def __init__(self, alpha, q, mean=0, n=None):
-        super().__init__(RR(stddevf(alpha * q)), RR(mean), n)
+    return DiscreteGaussian(RR(stddevf(alpha * q)), RR(mean), n)
 
 
 class CenteredBinomial(NoiseDistribution):
@@ -283,7 +285,7 @@ class CenteredBinomial(NoiseDistribution):
 
     EXAMPLE::
 
-        >>> import estimator.ND
+        >>> from estimator import *
         >>> ND.CenteredBinomial(8)
         D(σ=2.00)
     """
@@ -306,7 +308,7 @@ class CenteredBinomial(NoiseDistribution):
         EXAMPLE::
 
             >>> from estimator import *
-            >>> CenteredBinomial(3, 10).support_size()
+            >>> ND.CenteredBinomial(3, 10).support_size()
             282475249
             >>> ND.CenteredBinomial(3, 10).support_size(0.99)
             279650497
@@ -356,7 +358,7 @@ class Uniform(NoiseDistribution):
         return ceil(RR(fraction) * (b - a + 1)**len(self))
 
 
-class UniformMod(Uniform):
+def UniformMod(q, n=None):
     """
     Uniform mod ``q``, with balanced representation.
 
@@ -367,10 +369,11 @@ class UniformMod(Uniform):
         D(σ=2.00)
         >>> ND.UniformMod(8)
         D(σ=2.29, μ=0.50)
+        >>> ND.UniformMod(2) == ND.Uniform(0, 1)
+        True
     """
-    def __init__(self, q, n=None):
-        half_q = q // 2
-        super().__init__(half_q - q + 1, half_q, n=n)
+    half_q = q // 2
+    return Uniform(half_q - q + 1, half_q, n=n)
 
 
 class SparseTernary(NoiseDistribution):

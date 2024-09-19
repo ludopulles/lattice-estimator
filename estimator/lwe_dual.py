@@ -75,8 +75,8 @@ class DualHybrid:
                 return replace(params, Xs=slv_Xs, m=oo), 1
         else:
             # distribution is i.i.d. for each coordinate
-            red_Xs = replace(params.Xs, n=params.n - zeta)
-            slv_Xs = replace(params.Xs, n=zeta)
+            red_Xs = params.Xs.resize(params.n - zeta)
+            slv_Xs = params.Xs.resize(zeta)
 
         c = red_Xs.stddev * params.q / params.Xe.stddev
 
