@@ -362,6 +362,7 @@ class DualHybrid:
 
         EXAMPLES::
 
+            >>> warnings.filterwarnings("ignore", category=DeprecationWarning)
             >>> from estimator import *
             >>> from estimator.lwe_dual import dual_hybrid
             >>> params = LWE.Parameters(n=1024, q = 2**32, Xs=ND.Uniform(0,1), Xe=ND.DiscreteGaussian(3.0))

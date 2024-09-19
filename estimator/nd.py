@@ -338,10 +338,10 @@ class Uniform(NoiseDistribution):
         EXAMPLE::
 
             >>> from estimator import *
-            >>> hash(ND.Uniform(-10, 10)) == hash(("Uniform", 10, 10, None))
+            >>> hash(ND.Uniform(-10, 10)) == hash(("Uniform", (-10, 10), None))
             True
         """
-        return hash(("Uniform", self.a, self.b, self.n))
+        return hash(("Uniform", self.bounds, self.n))
 
     def support_size(self, fraction=1.0):
         """
