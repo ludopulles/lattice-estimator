@@ -19,7 +19,7 @@ from .prob import drop as prob_drop, amplify as prob_amplify
 from .io import Logging
 from .conf import red_cost_model as red_cost_model_default, mitm_opt as mitm_opt_default
 from .errors import OutOfBoundsError, InsufficientSamplesError
-from .nd import NoiseDistribution
+from .nd import DiscreteGaussian, SparseTernary
 from .lwe_guess import exhaustive_search, mitm, distinguish
 
 
@@ -66,8 +66,8 @@ class DualHybrid:
                 raise OutOfBoundsError(f"Splitting weight {h1} must be between 0 and h={h}.")
             # assuming the non-zero entries are uniform
             p = h1 / 2
-            red_Xs = NoiseDistribution.SparseTernary(params.n - zeta, h / 2 - p)
-            slv_Xs = NoiseDistribution.SparseTernary(zeta, p)
+            red_Xs = SparseTernary(params.n - zeta, h / 2 - p)
+            slv_Xs = SparseTernary(zeta, p)
 
             if h1 == h:
                 # no reason to do lattice reduction if we assume
@@ -91,7 +91,7 @@ class DualHybrid:
         # Compute new noise as in [INDOCRYPT:EspJouKha20]
         # ~ sigma_ = rho * red_Xs.stddev * delta ** (m_ + red_Xs.n) / c ** (m_ / (m_ + red_Xs.n))
         sigma_ = rho * red_Xs.stddev * delta**d / c ** (m_ / d)
-        slv_Xe = NoiseDistribution.DiscreteGaussian(params.q * sigma_)
+        slv_Xe = DiscreteGaussian(params.q * sigma_)
 
         slv_params = LWEParameters(
             n=zeta,
