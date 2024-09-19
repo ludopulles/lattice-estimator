@@ -245,9 +245,9 @@ class DiscreteGaussian(NoiseDistribution):
 
         EXAMPLE::
 
-            >>> from estimator.nd import DiscreteGaussian
-            >>> DiscreteGaussian(1.0, n=128).support_size(0.99)
-            ???
+            >>> from estimator import *
+            >>> ND.DiscreteGaussian(1.0, n=128).support_size(0.99)
+            2.686...e+174
         """
         # We will treat this noise distribution as bounded with failure probability `1 - fraction`.
         n = len(self)
@@ -403,6 +403,13 @@ class SparseTernary(NoiseDistribution):
             bounds=(-1, 1),
             n=n
         )
+
+    def resize(self, new_n):
+        """
+        Return an altered distribution having a dimension `new_n`.
+        Assumes `p` and `m` stay the same.
+        """
+        return SparseTernary(new_n, self.p, self.m)
 
     @property
     def hamming_weight(self):
