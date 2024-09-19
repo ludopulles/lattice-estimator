@@ -240,7 +240,7 @@ class DiscreteGaussian(NoiseDistribution):
 
             >>> from estimator import *
             >>> ND.DiscreteGaussian(1.0, n=128).support_size(0.99)
-            2.686...e+174
+            2.68643790357272e174
         """
         # We will treat this noise distribution as bounded with failure probability `1 - fraction`.
         n = len(self)

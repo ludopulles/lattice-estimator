@@ -7,7 +7,6 @@ See :ref:`LWE Dual Attacks` for an introduction what is available.
 """
 
 from functools import partial
-from dataclasses import replace
 
 from sage.all import oo, ceil, sqrt, log, cached_function, RR, exp, pi, e, coth, tanh
 
@@ -69,7 +68,7 @@ class DualHybrid:
             if h1 == h:
                 # no reason to do lattice reduction if we assume
                 # that the hw on the reduction part is 0
-                return replace(params, Xs=slv_Xs, m=oo), 1
+                return params.updated(Xs=slv_Xs, m=oo), 1
         else:
             # distribution is i.i.d. for each coordinate
             red_Xs = params.Xs.resize(params.n - zeta)
