@@ -7,7 +7,7 @@ some form of additive composition, i.e. this strategy is rarely the most efficie
 
 """
 
-from sage.all import binomial, ceil, e, exp, floor, log, oo, pi, round, RR, sqrt, ZZ
+from sage.all import binomial, ceil, e, exp, floor, log, oo, pi, QQ, round, RR, sqrt, ZZ
 
 from .conf import mitm_opt
 from .cost import Cost
@@ -241,7 +241,7 @@ class MITM:
 
         if params.Xs.is_sparse:
             h = params.Xs.hamming_weight
-            split_h = round(h * k / n)
+            split_h = QQ(h * k / n).round('down')
             success_probability_ = (
                 binomial(k, split_h) * binomial(n - k, h - split_h) / binomial(n, h)
             )
@@ -283,7 +283,7 @@ class MITM:
 
             # we assume the hamming weight to be distributed evenly across the two parts
             # if not we can rerandomize on the coordinates and try again -> repeat
-            split_h = round(h * k / n)
+            split_h = QQ(h * k / n).round('down')
             size_tab = RR((sd_rng - 1) ** split_h * binomial(k, split_h))
             size_sea = RR((sd_rng - 1) ** (h - split_h) * binomial(n - k, h - split_h))
             success_probability_ = (

@@ -3,7 +3,7 @@
 from copy import copy
 from dataclasses import dataclass
 
-from sage.all import binomial, ceil, exp, log, oo, parent, pi, RealField, RR, sqrt
+from sage.all import binomial, ceil, exp, log, oo, parent, pi, QQ, RealField, RR, sqrt
 
 
 def stddevf(sigma):
@@ -253,7 +253,7 @@ class DiscreteGaussian(NoiseDistribution):
             )
 
         b = 2 * t * sigmaf(self.stddev) + 1
-        return (2 * b + 1)**n
+        return RR(2.0 * b + 1)**n
 
 
 def DiscreteGaussianAlpha(alpha, q, mean=0, n=None):
@@ -435,9 +435,9 @@ class SparseTernary(NoiseDistribution):
         n, hw = len(self), self.hamming_weight
         if new_hw is None:
             # Most likely split has same density: new_hw / new_n = hw / n.
-            new_hw = int(round(hw * new_n / n))
+            new_hw = int(QQ(hw * new_n / n).round('down'))
 
-        new_p = int(round((new_hw * self.p) / hw))
+        new_p = int((QQ(new_hw * self.p) / hw).round('down'))
         new_m = new_hw - new_p
         return (
             SparseTernary(new_n, new_p, new_m),
