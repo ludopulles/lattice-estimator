@@ -362,6 +362,7 @@ class DualHybrid:
 
         EXAMPLES::
 
+            >>> import warnings  # https://github.com/sagemath/sage/issues/35473
             >>> warnings.filterwarnings("ignore", category=DeprecationWarning)
             >>> from estimator import *
             >>> from estimator.lwe_dual import dual_hybrid
@@ -379,7 +380,7 @@ class DualHybrid:
             >>> LWE.dual(params)
             rop: ≈2^103.4, mem: ≈2^63.9, m: 904, β: 251, d: 1928, ↻: 1, tag: dual
             >>> dual_hybrid(params)
-            rop: ≈2^92.1, mem: ≈2^78.2, m: 716, β: 170, d: 1464, ↻: 1989, ζ: 276, h1: 8, tag: dual_hybrid
+            rop: ≈2^91.6, mem: ≈2^77.2, m: 711, β: 168, d: 1456, ↻: ≈2^11.2, ζ: 279, h1: 8, tag: dual_hybrid
             >>> dual_hybrid(params, mitm_optimization=True)
             rop: ≈2^98.2, mem: ≈2^78.6, m: 728, k: 292, ↻: ≈2^18.7, β: 180, d: 1267, ζ: 485, h1: 17, tag: ...
 
