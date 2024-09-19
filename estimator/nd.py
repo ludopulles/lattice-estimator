@@ -75,6 +75,7 @@ class NoiseDistribution:
     n: int = None
     bounds: tuple = (-oo, oo)
     density: float = 1.0  # hamming_weight() / n.
+    is_Gaussian_like: bool = False
 
     def __lt__(self, other):
         """
@@ -186,10 +187,6 @@ class NoiseDistribution:
         return (self.bounds[1] - self.bounds[0]) < oo
 
     @property
-    def is_Gaussian_like(self):
-        return False
-
-    @property
     def is_sparse(self):
         """
         Whether the density of the distribution is < 1/2.
@@ -229,15 +226,11 @@ class DiscreteGaussian(NoiseDistribution):
     gaussian_tail_prob: float = 1 - 2 * exp(-4 * pi)
 
     def __init__(self, stddev, mean=0, n=None):
-        super().__init__(stddev=stddev, mean=mean, n=n)
+        super().__init__(stddev=stddev, mean=mean, n=n, is_Gaussian_like=True)
 
         b_val = oo if n is None else ceil(log(n, 2) * stddev)
         self.bounds = (-b_val, b_val)
         self.density = max(0.0, 1 - RR(1 / sigmaf(stddev)))
-
-    @property
-    def is_Gaussian_like(self):
-        return True
 
     def support_size(self, fraction=1.0):
         """
@@ -293,13 +286,10 @@ class CenteredBinomial(NoiseDistribution):
         super().__init__(
             density=1 - binomial(2 * eta, eta) * 2 ** (-2 * eta),
             stddev=RR(sqrt(eta / 2.0)),
+            is_Gaussian_like=True,
             bounds=(-eta, eta),
             n=n,
         )
-
-    @property
-    def is_Gaussian_like(self):
-        return True
 
     def support_size(self, fraction=1.0):
         """
@@ -390,8 +380,7 @@ class SparseTernary(NoiseDistribution):
         D(σ=0.42, μ=0.02)
     """
     def __init__(self, n, p, m=None):
-        if m is None:
-            m = p
+        p, m = int(p), int(p if m is None else m)
         self.p, self.m = p, m
 
         # Yes, n=0 might happen when estimating the cost of the dual attack!
