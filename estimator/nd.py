@@ -142,7 +142,7 @@ class NoiseDistribution:
         EXAMPLE::
 
             >>> from estimator import *
-            >>> hash(ND(3.0, 1.0)) == hash((3.0, 1.0, None))
+            >>> hash(ND.DiscreteGaussian(3.0, 1.0)) == hash((3.0, 1.0, None))
             True
 
         """
@@ -333,6 +333,16 @@ class Uniform(NoiseDistribution):
             n=n,
         )
 
+    def __hash__(self):
+        """
+        EXAMPLE::
+
+            >>> from estimator import *
+            >>> hash(ND.Uniform(-10, 10)) == hash(("Uniform", 10, 10, None))
+            True
+        """
+        return hash(("Uniform", self.a, self.b, self.n))
+
     def support_size(self, fraction=1.0):
         """
         Compute the size of the support covering the probability given as fraction.
@@ -395,6 +405,16 @@ class SparseTernary(NoiseDistribution):
             bounds=(-1, 1),
             n=n
         )
+
+    def __hash__(self):
+        """
+        EXAMPLE::
+
+            >>> from estimator import *
+            >>> hash(ND.SparseTernary(128, 16)) == hash(("SparseTernary", 128, 16, 16))
+            True
+        """
+        return hash(("SparseTernary", self.n, self.p, self.m))
 
     def resize(self, new_n):
         """

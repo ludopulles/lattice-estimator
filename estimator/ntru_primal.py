@@ -365,7 +365,7 @@ class NTRUPrimalHybrid(PrimalHybrid):
             >>> from estimator import *
             >>> NTRU.primal_hybrid(schemes.NTRUHPS2048509Enc.updated(Xs=ND.SparseTernary(508,16)),
             ... mitm = False, babai = False)
-            rop: ≈2^87.8, red: ≈2^87.0, svp: ≈2^86.6, β: 116, η: 21, ζ: 302, |S|: ≈2^39.2, d: 372, prob: ≈2^-22.3, ...
+            rop: ≈2^96.2, red: ≈2^95.6, svp: ≈2^94.5, β: 170, η: 138, ζ: 197, |S|: ≈2^16.2, d: 552, prob: ≈2^-15.5, ...
 
             >>> NTRU.primal_hybrid(schemes.NTRUHPS2048509Enc.updated(Xs=ND.SparseTernary(508,16)),
             ... mitm = False, babai = True)

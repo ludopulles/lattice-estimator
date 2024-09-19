@@ -128,7 +128,7 @@ class guess_composition:
             >>> from estimator import *
             >>> from estimator.lwe_guess import guess_composition
             >>> guess_composition(LWE.primal_usvp)(schemes.Kyber512.updated(Xs=ND.SparseTernary(512, 16)))
-            rop: ≈2^99.4, red: ≈2^99.4, δ: 1.008705, β: 113, d: 421, tag: usvp, ↻: ≈2^37.5, ζ: 265, |S|: 1, ...
+            rop: ≈2^102.2, red: ≈2^102.2, δ: 1.008011, β: 132, d: 461, tag: usvp, ↻: ≈2^34.9, ζ: 252, |S|: 1, ...
 
         Compare::
 
@@ -166,7 +166,7 @@ class ExhaustiveSearch:
             rop: ≈2^73.6, mem: ≈2^72.6, m: 397.198
             >>> params = LWE.Parameters(n=1024, q=2**40, Xs=ND.SparseTernary(n=1024, p=32), Xe=ND.DiscreteGaussian(3.2))
             >>> exhaustive_search(params)
-            rop: ≈2^417.3, mem: ≈2^416.3, m: ≈2^11.2
+            rop: ≈2^413.9, mem: ≈2^412.9, m: ≈2^11.1
 
         """
         params = LWEParameters.normalize(params)
