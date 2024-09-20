@@ -1,9 +1,10 @@
 # -*- coding: utf-8 -*-
 from dataclasses import dataclass
+from copy import copy
 
 from sage.all import oo, binomial, log, sqrt, ceil
 
-from .nd import NoiseDistribution, DiscreteGaussian
+from .nd import NoiseDistribution
 from .errors import InsufficientSamplesError
 
 
@@ -23,9 +24,11 @@ class LWEParameters:
     tag: str = None  #: a name for the patameter set
 
     def __post_init__(self, **kwds):
-        self.Xs = self.Xs.resize(self.n)
+        self.Xs = copy(self.Xs)
+        self.Xs.n = self.n
         if self.m < oo:
-            self.Xe = self.Xe.resize(self.m)
+            self.Xe = copy(self.Xe)
+            self.Xe.n = self.m
 
     @property
     def _homogeneous(self):
@@ -120,12 +123,12 @@ class LWEParameters:
             #  -two signs per position (+1,-1)
             # - all "-" and all "+" are the same
             if binomial(self.m, k) * 2**k - 1 >= m:
-                Xe = DiscreteGaussian(float(sqrt(k) * self.Xe.stddev))
+                Xe = NoiseDistribution.DiscreteGaussian(float(sqrt(k) * self.Xe.stddev))
                 d["Xe"] = Xe
                 d["m"] = ceil(m)
                 return LWEParameters(**d)
         else:
-            raise NotImplementedError(f"Cannot amplify to ≈2^{log(m, 2):1} using {{+1,-1}} additions.")
+            raise NotImplementedError(f"Cannot amplify to ≈2^{log(m,2):1} using {{+1,-1}} additions.")
 
     def switch_modulus(self):
         """
@@ -157,7 +160,7 @@ class LWEParameters:
             self.n,
             p,
             Xs=self.Xs,
-            Xe=DiscreteGaussian(sqrt(2) * self.Xe.stddev * scale),
+            Xe=NoiseDistribution.DiscreteGaussian(sqrt(2) * self.Xe.stddev * scale),
             m=self.m,
             tag=f"{self.tag},scaled" if self.tag else None,
         )

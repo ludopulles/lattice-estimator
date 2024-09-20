@@ -7,7 +7,7 @@ some form of additive composition, i.e. this strategy is rarely the most efficie
 
 """
 
-from sage.all import binomial, ceil, e, exp, floor, log, oo, pi, QQ, round, RR, sqrt, ZZ
+from sage.all import binomial, ceil, e, exp, floor, log, oo, pi, round, RR, sqrt, ZZ
 
 from .conf import mitm_opt
 from .cost import Cost
@@ -128,12 +128,12 @@ class guess_composition:
             >>> from estimator import *
             >>> from estimator.lwe_guess import guess_composition
             >>> guess_composition(LWE.primal_usvp)(schemes.Kyber512.updated(Xs=ND.SparseTernary(512, 16)))
-            rop: ≈2^102.2, red: ≈2^102.2, δ: 1.008011, β: 132, d: 461, tag: usvp, ↻: ≈2^34.9, ζ: 252, |S|: 1, ...
+            rop: ≈2^99.4, red: ≈2^99.4, δ: 1.008705, β: 113, d: 421, tag: usvp, ↻: ≈2^37.5, ζ: 265, |S|: 1, ...
 
         Compare::
 
             >>> LWE.primal_hybrid(schemes.Kyber512.updated(Xs=ND.SparseTernary(512, 16)))
-            rop: ≈2^136.4, red: ≈2^136.3, svp: ≈2^131.1, β: 251, η: 2, ζ: 203, |S|: ≈2^152.6, d: 673, ...
+            rop: ≈2^85.8, red: ≈2^84.8, svp: ≈2^84.8, β: 105, η: 2, ζ: 366, |S|: ≈2^85.1, d: 315, prob: ≈2^-23.4, ...
 
         """
         params = LWEParameters.normalize(params)
@@ -166,7 +166,7 @@ class ExhaustiveSearch:
             rop: ≈2^73.6, mem: ≈2^72.6, m: 397.198
             >>> params = LWE.Parameters(n=1024, q=2**40, Xs=ND.SparseTernary(n=1024, p=32), Xe=ND.DiscreteGaussian(3.2))
             >>> exhaustive_search(params)
-            rop: ≈2^413.9, mem: ≈2^412.9, m: ≈2^11.1
+            rop: ≈2^417.3, mem: ≈2^416.3, m: ≈2^11.2
 
         """
         params = LWEParameters.normalize(params)
@@ -175,7 +175,7 @@ class ExhaustiveSearch:
         probability = sqrt(success_probability)
 
         try:
-            size = params.Xs.support_size(probability)
+            size = params.Xs.support_size(n=params.n, fraction=probability)
         except NotImplementedError:
             # not achieving required probability with search space
             # given our settings that means the search space is huge
@@ -221,7 +221,7 @@ class MITM:
         else:
             # setting fraction=0 to ensure that support size does not
             # throw error. we'll take the probability into account later
-            rng = nd.resize(1).support_size(0.0)
+            rng = nd.support_size(n=1, fraction=0.0)
             return rng, nd.gaussian_tail_prob
 
     def local_range(self, center):
@@ -240,8 +240,8 @@ class MITM:
         # about 3x faster and reasonably accurate
 
         if params.Xs.is_sparse:
-            h = params.Xs.hamming_weight
-            split_h = QQ(h * k / n).round('down')
+            h = params.Xs.get_hamming_weight(n=params.n)
+            split_h = round(h * k / n)
             success_probability_ = (
                 binomial(k, split_h) * binomial(n - k, h - split_h) / binomial(n, h)
             )
@@ -279,11 +279,11 @@ class MITM:
         n = params.n
 
         if params.Xs.is_sparse:
-            h = params.Xs.hamming_weight
+            h = params.Xs.get_hamming_weight(n=n)
 
             # we assume the hamming weight to be distributed evenly across the two parts
             # if not we can rerandomize on the coordinates and try again -> repeat
-            split_h = QQ(h * k / n).round('down')
+            split_h = round(h * k / n)
             size_tab = RR((sd_rng - 1) ** split_h * binomial(k, split_h))
             size_sea = RR((sd_rng - 1) ** (h - split_h) * binomial(n - k, h - split_h))
             success_probability_ = (
