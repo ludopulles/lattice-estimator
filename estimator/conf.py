@@ -3,7 +3,7 @@
 Default values.
 """
 
-from .simulator import GSA
+from .simulator import normalize as simulator_normalize
 from .reduction import RC
 from sage.all import exp
 
@@ -14,7 +14,7 @@ This influences the concrete estimated cost of attacks.
 red_cost_model = RC.MATZOV
 red_cost_model_classical_poly_space = RC.ABLR21
 red_shape_model = "gsa"
-red_simulator = GSA
+red_simulator = simulator_normalize(red_shape_model)
 
 mitm_opt = "analytical"
 max_n_cache = 10000

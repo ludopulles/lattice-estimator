@@ -204,13 +204,9 @@ class PrimalDSD():
             raise NotImplementedError("Dense sublattice attack not supported for Xs != Xe")
 
         params = NTRUParameters.normalize(params)
+        simulator = simulator_normalize(red_shape_model)
         # allow for a larger embedding lattice dimension: Bai and Galbraith
         m = params.m + params.n if params.Xs <= params.Xe else params.m
-
-        try:
-            red_shape_model = simulator_normalize(red_shape_model)
-        except ValueError:
-            pass
 
         if params.n > max_n_cache:
             raise ValueError("Please increase the hardcoded value of max_n_cache to run the predictor for such large n")
@@ -224,7 +220,7 @@ class PrimalDSD():
         for beta in range(2, params.n):
             tours = floor(params.n**2 / beta**2)+3
 
-            DSD_prob, DSD_prob_pos = self.prob_dsd(beta, params, red_shape_model, m=m,
+            DSD_prob, DSD_prob_pos = self.prob_dsd(beta, params, simulator, m=m,
                                                    red_cost_model=red_cost_model, log_level=log_level)
 
             if DSD_prob > 10e-8:

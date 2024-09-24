@@ -45,7 +45,6 @@ class SISLattice:
         d = sqrt(params.n * log(params.q, 2) / log_delta)
         return d
 
-    @staticmethod
     @cached_function
     def cost_euclidean(
         params: SISParameters,
@@ -77,12 +76,11 @@ class SISLattice:
             red_cost_model, beta, d, predicate=params.length_bound > lb and reduction_possible
         )
 
-    @staticmethod
     @cached_function
     def cost_infinity(
         beta: int,
         params: SISParameters,
-        simulator,
+        simulator=red_simulator_default,
         zeta: int = 0,
         success_probability: float = 0.99,
         d=None,
@@ -186,11 +184,11 @@ class SISLattice:
 
     @classmethod
     def cost_zeta(
-        cls,
+        self,
         zeta: int,
         params: SISParameters,
         ignore_qary: bool = False,
-        red_shape_model=red_simulator_default,
+        simulator=red_simulator_default,
         red_cost_model=red_cost_model_default,
         d=None,
         log_level=5,
@@ -206,10 +204,11 @@ class SISLattice:
         params_baseline = params.updated(
             norm=2, length_bound=2 if params.length_bound == 1 else params.length_bound
         )
-        baseline_cost = lattice(
+        baseline_cost = self.__call__(
+            self,
             params_baseline,
             ignore_qary=ignore_qary,
-            red_shape_model=red_shape_model,
+            red_shape_model=simulator,
             red_cost_model=red_cost_model,
             log_level=log_level + 1,
             **kwds,
@@ -218,11 +217,11 @@ class SISLattice:
         Logging.log("sis_infinity", log_level, f"H0: {repr(baseline_cost)}")
 
         f = partial(
-            cls.cost_infinity,
+            self.cost_infinity,
             params=params,
             zeta=zeta,
             ignore_qary=ignore_qary,
-            simulator=red_shape_model,
+            simulator=simulator,
             red_cost_model=red_cost_model,
             d=d,
             **kwds,
@@ -312,12 +311,12 @@ class SISLattice:
             )
 
         if tag == "infinity":
-            red_shape_model = simulator_normalize(red_shape_model)
+            simulator = simulator_normalize(red_shape_model)
 
             f = partial(
                 self.cost_zeta,
                 params=params,
-                red_shape_model=red_shape_model,
+                simulator=simulator,
                 red_cost_model=red_cost_model,
                 log_level=log_level + 1,
             )

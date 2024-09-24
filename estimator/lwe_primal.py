@@ -13,7 +13,7 @@ from .reduction import cost as costf
 from .util import local_minimum
 from .cost import Cost
 from .lwe_parameters import LWEParameters
-from .simulator import normalize as simulator_normalize
+from .simulator import normalize as simulator_normalize, GSA
 from .prob import drop as prob_drop
 from .prob import amplify as prob_amplify
 from .prob import babai as prob_babai
@@ -21,7 +21,6 @@ from .prob import mitm_babai_probability
 from .io import Logging
 from .conf import red_cost_model as red_cost_model_default
 from .conf import red_shape_model as red_shape_model_default
-from .conf import red_simulator as red_simulator_default
 
 
 class PrimalUSVP:
@@ -214,52 +213,31 @@ class PrimalUSVP:
 
         """
         params = LWEParameters.normalize(params)
+        simulator = simulator_normalize(red_shape_model)
         # allow for a larger embedding lattice dimension: Bai and Galbraith
         m = params.m + params.n if params.Xs <= params.Xe else params.m
-        if red_shape_model == "gsa":
-            with local_minimum(40, max(2 * params.n, 41), precision=5) as it:
-                for beta in it:
-                    cost = self.cost_gsa(
-                        beta=beta, params=params, m=m, red_cost_model=red_cost_model, **kwds
-                    )
-                    it.update(cost)
-                for beta in it.neighborhood:
-                    cost = self.cost_gsa(
-                        beta=beta, params=params, m=m, red_cost_model=red_cost_model, **kwds
-                    )
-                    it.update(cost)
-                cost = it.y
+
+        # step 0. establish baseline using the GSA
+        f = partial(self.cost_gsa, red_cost_model=red_cost_model, m=m, params=params)
+        with local_minimum(40, max(2 * params.n, 41), precision=5) as it:
+            for beta in it:
+                it.update(f(beta=beta, **kwds))
+            for beta in it.neighborhood:
+                it.update(f(beta=beta, **kwds))
+            cost = it.y
+
+        if simulator is GSA:
             cost["tag"] = "usvp"
             cost["problem"] = params
             return cost.sanity_check()
 
-        try:
-            red_shape_model = simulator_normalize(red_shape_model)
-        except ValueError:
-            pass
-
-        # step 0. establish baseline
-        cost_gsa = self(
-            params,
-            red_cost_model=red_cost_model,
-            red_shape_model="gsa",
-        )
-
-        Logging.log("usvp", log_level + 1, f"GSA: {repr(cost_gsa)}")
-
-        f = partial(
-            self.cost_simulator,
-            simulator=red_shape_model,
-            red_cost_model=red_cost_model,
-            m=m,
-            params=params,
-        )
+        Logging.log("usvp", log_level + 1, f"GSA: {repr(cost)}")
 
         # step 1. find β
-
+        f = partial(self.cost_simulator, simulator=simulator, red_cost_model=red_cost_model, m=m, params=params)
         with local_minimum(
-            max(cost_gsa["beta"] - ceil(0.10 * cost_gsa["beta"]), 40),
-            max(cost_gsa["beta"] + ceil(0.20 * cost_gsa["beta"]), 40),
+            max(cost["beta"] - ceil(0.10 * cost["beta"]), 40),
+            max(cost["beta"] + ceil(0.20 * cost["beta"]), 40),
         ) as it:
             for beta in it:
                 it.update(f(beta=beta, **kwds))
@@ -336,7 +314,7 @@ class PrimalHybrid:
         mitm=False,
         m: int = oo,
         d: int = None,
-        simulator=red_simulator_default,
+        red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
         log_level=5,
     ):
@@ -369,6 +347,7 @@ class PrimalHybrid:
             tau = False
             d -= 1
 
+        simulator = simulator_normalize(red_shape_model)
         r = simulator(d, params.n - zeta, params.q, beta, xi=xi, tau=tau, dual=True)
 
         bkz_cost = costf(red_cost_model, beta, d)
@@ -464,7 +443,7 @@ class PrimalHybrid:
         cls,
         zeta: int,
         params: LWEParameters,
-        red_shape_model=red_simulator_default,
+        red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
         m: int = oo,
         babai: bool = True,
@@ -494,21 +473,24 @@ class PrimalHybrid:
             zeta=zeta,
             babai=babai,
             mitm=mitm,
-            simulator=red_shape_model,
+            red_shape_model=red_shape_model,
             red_cost_model=red_cost_model,
             m=m,
             **kwds,
         )
 
         # step 1. optimize β
-        with local_minimum(
-            40, baseline_cost["beta"] + 1, precision=2, log_level=log_level + 1
-        ) as it:
-            for beta in it:
-                it.update(f(beta))
-            for beta in it.neighborhood:
-                it.update(f(beta))
-            cost = it.y
+        if baseline_cost["beta"] <= 40:
+            cost = f(40)
+        else:
+            with local_minimum(
+                40, baseline_cost["beta"] + 1, precision=2, log_level=log_level + 1
+            ) as it:
+                for beta in it:
+                    it.update(f(beta))
+                for beta in it.neighborhood:
+                    it.update(f(beta))
+                cost = it.y
 
         Logging.log("bdd", log_level, f"H1: {cost!r}")
 
@@ -609,8 +591,6 @@ class PrimalHybrid:
 
         # allow for a larger embedding lattice dimension: Bai and Galbraith
         m = params.m + params.n if params.Xs <= params.Xe else params.m
-
-        red_shape_model = simulator_normalize(red_shape_model)
 
         f = partial(
             self.cost_zeta,
