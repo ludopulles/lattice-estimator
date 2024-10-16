@@ -92,8 +92,7 @@ def mitm_babai_probability(r, stddev, fast=False):
         return 1
 
     # Note: `r` contains *square norms*, so convert to non-square norms.
-    # Follow the proof of Lemma 4.2 [EPRINT_SonChe19]_ because that one uses the right standard
-    # deviation (Lemma 4.2 contains 'wrong' factors of `pi` in some places).
+    # Follow the proof of Lemma 4.2 [EPRINT_SonChe19]_, because that one uses standard deviation.
     xs = [sqrt(.5 * ri) / stddev for ri in r]
     p = prod(RR(erf(x) - (1 - exp(-x**2)) / (x * sqrt(pi))) for x in xs)
     assert 0.0 <= p <= 1.0
