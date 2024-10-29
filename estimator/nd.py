@@ -409,11 +409,11 @@ class SparseTernary(NoiseDistribution):
 
         >>> from estimator import *
         >>> ND.SparseTernary(10, n=100)
-        D(σ=0.45)
+        T(p=10, m=10, n=100)
         >>> ND.SparseTernary(10, 10, 100)
-        D(σ=0.45)
+        T(p=10, m=10, n=100)
         >>> ND.SparseTernary(10, 8, 100)
-        D(σ=0.42, μ=0.02)
+        T(p=10, m=8, n=100)
         >>> ND.SparseTernary(0, 0, 0).support_size()
         1
     """
