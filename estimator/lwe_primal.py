@@ -424,7 +424,7 @@ class PrimalHybrid:
             # cannot BKZ-β on a basis of dimension < β
             return Cost(rop=oo)
 
-        xi = PrimalHybrid._xi_factor(params.Xs.resize(params.n - zeta), params.Xe)
+        xi = PrimalUSVP._xi_factor(params.Xs.resize(params.n - zeta), params.Xe)
         tau = 1
         # 1. Simulate BKZ-β
         # TODO: pick τ as non default value
@@ -473,7 +473,7 @@ class PrimalHybrid:
             svp_cost["rop"] += PrimalHybrid.babai_cost(d - eta)["rop"]
         # 3. Search
         # We need to do one BDD call at least
-        search_space, probability, hw = 1, 1.0, 0
+        search_space, probability = 1, 1.0
 
         # MITM or no MITM
         # TODO: this is rather clumsy as a model
@@ -491,16 +491,15 @@ class PrimalHybrid:
             h = params.Xs.hamming_weight
 
             if hw is None:
-                hw = 1
+                hw = 0
                 probability = RR(prob_drop(params.n, h, zeta))
-                while hw <= min(h, zeta):
-                    new_search_space = binomial(zeta, hw) * base**hw
-                    if svp_cost.repeat(ssf(search_space + new_search_space))["rop"] >= bkz_cost["rop"]:
+                while hw < min(h, zeta):
+                    new_search_space = binomial(zeta, hw + 1) * base**(hw + 1)
+                    if svp_cost.repeat(ssf(new_search_space))["rop"] >= bkz_cost["rop"]:
                         break
-                    search_space += new_search_space
-                    probability += prob_drop(params.n, h, zeta, fail=hw)
+                    search_space = new_search_space
+                    probability = prob_drop(params.n, h, zeta, fail=hw)
                     hw += 1
-                hw -= 1
             else:
                 probability = prob_drop(params.n, h, zeta, fail=hw)
                 search_space = binomial(zeta, hw) * base**hw
@@ -735,7 +734,7 @@ class PrimalHybrid:
 
         cost["tag"] = tag
         cost["problem"] = params
-        cost["xi"] = self._xi_factor(params.Xs.resize(params.n - cost["zeta"]), params.Xe)
+        cost["xi"] = PrimalUSVP._xi_factor(params.Xs.resize(params.n - cost["zeta"]), params.Xe)
         cost["tau"] = round(float(params.Xe.stddev))
 
         r = red_simulator_default(
