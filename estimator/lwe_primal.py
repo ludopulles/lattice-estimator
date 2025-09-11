@@ -344,42 +344,11 @@ def estimate_target_upper_bound_ternary_vec(n, w, sigma, k, m, q):
     return vec_bound
 
 
-from typing import Optional, Tuple
-
 class PrimalHybrid:
     @classmethod
-    def babai_cost_fp64(cls, d):
-        return Cost(rop= 12 * 16 * 8 * max(d, 1) ** 2) # cost of the implementation of babai fp64 compared to the BKZ
+    def babai_cost(cls, d):
+        return Cost(rop=max(d, 1) ** 2)
 
-    @classmethod
-    def babai_feasible(cls, r, vec_bound: Optional[np.ndarray] = None, rho: Optional[float] = None, safety: float = 1.0):
-        """
-        Sufficient Babai test (diagonal/GS-based).
-        - r: array of ||b_i^*||^2 (BKZ simulated profile, in linear scale)
-        - vec_bound: the explicit target bound vector (e.g., from estimate_target_upper_bound_ternary_vec)
-                     If provided, we ignore D,y,m,u_rest,xi and use rho=||vec_bound||.
-        - rho: if you have only the scalar bound already.
-        Returns: (ok_sufficient, worst_i, worst_margin, margins_diag)
-        """
-        r = np.asarray(r, dtype=float)
-        d = int(r.size)
-
-        if vec_bound is not None:
-            vb = np.asarray(vec_bound, dtype=float).ravel()
-            rho2 = float(np.dot(vb, vb)) * float(safety) ** 2
-        elif rho is not None:
-            rho2 = float(rho) ** 2 * float(safety) ** 2
-        else:
-            raise ValueError("sigma-mode disabled here: pass `vec_bound` or `rho` (scalar).")
-
-        margins_diag = 0.25 * r - rho2
-        worst_i = int(np.argmin(margins_diag))
-        worst_margin = float(margins_diag[worst_i])
-        ok = bool(np.all(margins_diag > 0.0))
-        return ok, worst_i, worst_margin, margins_diag
-
-    
-    
     @classmethod
     def svp_dimension(cls, r, D):
         """
@@ -415,12 +384,7 @@ class PrimalHybrid:
                 if gaussian_heuristic_log_input(r[i:]) < D.stddev**2 * (d - i):
                     return ZZ(d - (i - 1))
             return ZZ(2)
-    @staticmethod
-    def xi_factor_rework(Xs, Xe, zeta, n):
-        xi = RR(1)
-        if Xs < Xe:
-            xi = Xe.stddev / (Xs.resize(n-zeta).stddev)
-        return xi
+
     @staticmethod
     @cached_function
     def cost(
@@ -434,6 +398,7 @@ class PrimalHybrid:
         simulator=red_simulator_default,
         red_cost_model=red_cost_model_default,
         log_level=5,
+        hw=None,
     ):
         """
         Cost of the hybrid attack.
@@ -459,7 +424,7 @@ class PrimalHybrid:
             # cannot BKZ-β on a basis of dimension < β
             return Cost(rop=oo)
 
-        xi = PrimalHybrid.xi_factor_rework(params.Xs, params.Xe, zeta, params.n)
+        xi = PrimalHybrid._xi_factor(params.Xs.resize(params.n - zeta), params.Xe)
         tau = 1
         # 1. Simulate BKZ-β
         # TODO: pick τ as non default value
@@ -494,7 +459,7 @@ class PrimalHybrid:
         # target_success = 0.9 
         if babai:
             eta = 2
-            svp_cost = PrimalHybrid.babai_cost_fp64(d - (params.n - zeta)) # reduce it by checking only the error part
+            svp_cost = PrimalHybrid.babai_cost(d - (params.n - zeta)) # reduce it by checking only the error part
         else:
             eta = PrimalHybrid.svp_dimension(r, params.Xe)
             eta = max(eta,70) # just the same as BKZ G6K is much a overhead if < 70
@@ -524,15 +489,21 @@ class PrimalHybrid:
         if zeta:
             # the number of non-zero entries
             h = params.Xs.hamming_weight
-            probability = RR(prob_drop(params.n, h, zeta))
-            hw = 1
-            while hw < min(h, zeta):
-                new_search_space = binomial(zeta, hw) * base**hw
-                if svp_cost.repeat(ssf(search_space + new_search_space))["rop"] >= bkz_cost["rop"]:
-                    break
-                search_space += new_search_space
-                probability += prob_drop(params.n, h, zeta, fail=hw)
-                hw += 1
+
+            if hw is None:
+                hw = 1
+                probability = RR(prob_drop(params.n, h, zeta))
+                while hw <= min(h, zeta):
+                    new_search_space = binomial(zeta, hw) * base**hw
+                    if svp_cost.repeat(ssf(search_space + new_search_space))["rop"] >= bkz_cost["rop"]:
+                        break
+                    search_space += new_search_space
+                    probability += prob_drop(params.n, h, zeta, fail=hw)
+                    hw += 1
+                hw -= 1
+            else:
+                probability = prob_drop(params.n, h, zeta, fail=hw)
+                search_space = binomial(zeta, hw) * base**hw
 
             svp_cost = svp_cost.repeat(ssf(search_space))
 
@@ -554,7 +525,8 @@ class PrimalHybrid:
         ret["eta"] = eta
         ret["zeta"] = zeta
         ret["|S|"] = search_space
-        ret["h_"] = hw-1
+        if zeta:
+            ret["h_"] = hw
         ret["prob_babai"] = round(float(prob_babai(r, sqrt(d) * params.Xe.stddev)), 2)
         ret["d"] = d
         ret["prob"] = probability
@@ -760,18 +732,20 @@ class PrimalHybrid:
             cost = min(it.y, f(0, optimize_d=False, **kwds))
         else:
             cost = f(zeta=zeta)
+
         cost["tag"] = tag
         cost["problem"] = params
+        cost["xi"] = self._xi_factor(params.Xs.resize(params.n - cost["zeta"]), params.Xe)
+        cost["tau"] = round(float(params.Xe.stddev))
 
-        r = red_simulator_default(cost["d"], params.n - cost["zeta"], params.q, cost["beta"], xi=self.xi_factor_rework(params.Xs, params.Xe, cost["zeta"], params.n), tau=round(float(params.Xe.stddev)), dual=False)
+        r = red_simulator_default(
+            cost["d"], params.n - cost["zeta"], params.q, cost["beta"],
+            xi=cost["xi"], tau=cost["tau"], dual=False
+        )
         _ = save_and_plot_profile(
-            r,
-            outdir="saved_profiles",
-            prefix="prof",
+            r, outdir="saved_profiles", prefix="prof",
             meta={"beta": cost.get("beta"), "n": params.n}  # optional; remove if not in scope
         )
-        cost["xi"] = self.xi_factor_rework(params.Xs, params.Xe, cost["zeta"], params.n)
-        cost["tau"] = round(float(params.Xe.stddev))
 
         if tag == "bdd":
             for k in ("|S|", "prob", "repetitions", "zeta"):

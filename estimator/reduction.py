@@ -1000,14 +1000,6 @@ def cost(cost_model, beta, d, B=None, predicate=True, **kwds):
     return cost
 
 
-class Blaster(ReductionCost):
-    __name__ = "Blaster"
-
-    def __call__(self, beta, d, B=None):
-        #make a cost that is as a huge overhead for small beta
-        cost = Kyber()(beta, d, B) # decrease from a scalar factor
-        return cost / 4
-
 beta = ReductionCost.beta
 delta = ReductionCost.delta
 
@@ -1027,4 +1019,3 @@ class RC:
     GJ21 = GJ21()
     LaaMosPol14 = LaaMosPol14()
     ChaLoy21 = ChaLoy21()
-    Blaster = Blaster()
