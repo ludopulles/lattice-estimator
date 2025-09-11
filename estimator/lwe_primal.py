@@ -503,8 +503,9 @@ class PrimalHybrid:
             else:
                 probability = prob_drop(params.n, h, zeta, fail=hw)
                 search_space = binomial(zeta, hw) * base**hw
-
             svp_cost = svp_cost.repeat(ssf(search_space))
+        else:
+            hw = 0
 
         if mitm and zeta > 0:
             if babai:
@@ -524,8 +525,7 @@ class PrimalHybrid:
         ret["eta"] = eta
         ret["zeta"] = zeta
         ret["|S|"] = search_space
-        if zeta:
-            ret["h_"] = hw
+        ret["h_"] = hw
         ret["prob_babai"] = round(float(prob_babai(r, sqrt(d) * params.Xe.stddev)), 2)
         ret["d"] = d
         ret["prob"] = probability
