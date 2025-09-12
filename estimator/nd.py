@@ -606,7 +606,7 @@ class SparseBinomial(NoiseDistribution):
             # Treat it the same as n=0.
             n = 0
         density = 0 if n == 0 else hw / n
-        stddev = sqrt(hw * eta / 2)
+        stddev = sqrt(density * eta / 2)
         super().__init__(
             n=n,
             mean=0,
