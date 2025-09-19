@@ -7,10 +7,13 @@ See :ref:`LWE Primal Attacks` for an introduction what is available.
 """
 from functools import partial
 
-from sage.all import oo, ceil, sqrt, log, RR, ZZ, cached_function
+from sage.all import oo, ceil, sqrt, log, RR, ZZ, binomial, cached_function
+from scipy.optimize import minimize_scalar
+
 from .reduction import delta as deltaf
 from .reduction import cost as costf
 from .util import local_minimum
+from .util import binary_search
 from .cost import Cost
 from .lwe_parameters import LWEParameters
 from .simulator import normalize as simulator_normalize
@@ -18,12 +21,12 @@ from .simulator import GSA
 from .prob import guessing_set_and_hit_probability
 from .prob import amplify as prob_amplify
 from .prob import babai as prob_babai
+from .prob import drop as prob_drop
 from .prob import mitm_babai_probability
 from .io import Logging
 from .conf import red_cost_model as red_cost_model_default
 from .conf import red_shape_model as red_shape_model_default
 from .conf import max_beta as max_beta_global
-from scipy.optimize import minimize_scalar
 
 
 class PrimalUSVP:
@@ -260,6 +263,8 @@ class PrimalUSVP:
             red_shape_model="gsa",
         )
         Logging.log("usvp", log_level + 1, f"GSA: {repr(cost_gsa)}")
+        if cost_gsa["rop"] == oo:
+            return cost_gsa
 
         f = partial(
             self.cost_simulator,
@@ -406,10 +411,94 @@ class PrimalHybrid:
                     return ZZ(d - (i - 1) + 1)
             return ZZ(2)
 
-    @classmethod
+    @staticmethod
+    @cached_function
+    def cost_precise(
+        params: LWEParameters,
+        beta: int,
+        zeta: int,
+        h_: int,
+        babai=False,
+        mitm=False,
+        red_shape_model=red_shape_model_default,
+        red_cost_model=red_cost_model_default,
+        log_level=5,
+    ):
+        """
+        Cost of the hybrid attack, more precisely with the "optimal" xi,
+        and assume the guess is of only one weight.
+        """
+        assert zeta != 0
+
+        # Remaining problem
+        subparams = params.updated(n=params.n - zeta)
+        guess = None
+        if params.Xs.is_sparse:
+            guess, subparams.Xs = params.Xs.split_balanced(zeta, h_)
+
+        # 1. Simulate BKZ-β
+        xi = 1 if RR(subparams.Xs.stddev) == RR(0) else PrimalUSVP._xi_factor(subparams.Xs, params.Xe)
+
+        tau = False if params._homogeneous else params.Xe.stddev
+        m = min(params.m, ceil(sqrt(subparams.n * log(params.q) / log(deltaf(beta)))) - subparams.n)
+        d = max(beta, m + subparams.n + (0 if params._homogeneous else 1))
+
+        simulator = simulator_normalize(red_shape_model)
+        r = simulator(d, subparams.n, params.q, beta, xi=xi, tau=tau, dual=True)
+        bkz_cost = costf(red_cost_model, beta, d)
+
+        # 2. Required SVP dimension η
+        if babai:
+            eta = 2
+            svp_cost = PrimalHybrid.babai_cost(d)
+        else:
+            # we scaled the lattice so that χ_e is what we want
+            eta = PrimalHybrid.svp_dimension(r, params.Xe)
+            # r2 = simulator(d, subparams.n, params.q, beta, xi=xi2, tau=tau, dual=True)
+            # print(f"Alternative eta: {PrimalHybrid.svp_dimension(r2, params.Xe)}")
+
+            if eta > d:
+                # Lattice reduction was not strong enough to "reveal" the LWE solution.
+                # A larger `beta` should perhaps be attempted.
+                return Cost(rop=oo)
+            svp_cost = costf(red_cost_model, eta, eta)
+            # when η ≪ β, lifting may be a bigger cost
+            svp_cost["rop"] += PrimalHybrid.babai_cost(d - eta)["rop"]
+
+        # 3. Search
+        base = params.Xs.bounds[1] - params.Xs.bounds[0]  # e.g. (-1, 1) -> two nonzero values
+        num_guesses = guess.support_size() if params.Xs.is_sparse else binomial(zeta, h_) * base**h_
+        # p_HW:
+        p = RR(prob_drop(params.n, params.Xs.hamming_weight, zeta, fail=h_))
+
+        # TODO: this is rather clumsy as a model
+        svp_cost = svp_cost.repeat(RR(sqrt(num_guesses) if mitm else num_guesses))
+
+        if mitm:
+            assert babai is True  # TODO: analyze probability when not using Babai NP.
+            # p_adm:
+            p *= mitm_babai_probability(r, params.Xe.stddev)
+
+        if eta <= 20 and d >= 0:
+            # p_NP:
+            # NOTE: η: somewhat arbitrary bound, d: we may guess it all
+            p *= RR(prob_babai(r, sqrt(d) * params.Xe.stddev))
+
+        cost = Cost({
+            "rop": bkz_cost["rop"] + svp_cost["rop"],
+            "red": bkz_cost["rop"], "svp": svp_cost["rop"],
+            "beta": beta, "eta": eta, "zeta": zeta, "|S|": num_guesses, "d": d,
+            "prob": p, "h_": h_,
+        })
+
+        if not p or RR(p).is_NaN():
+            return Cost(rop=oo)
+        # 4. Repeat whole experiment ~1/prob times
+        return cost.repeat(prob_amplify(0.99, p))
+
+    @staticmethod
     @cached_function
     def beta_params(
-        cls,
         beta: int,
         params: LWEParameters,
         zeta: int = 0,
@@ -522,6 +611,7 @@ class PrimalHybrid:
         d: int = None,
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
+        precise_cost: bool = False,
         search_space=None,
         hit_probability=None,
         log_level=5,
@@ -543,6 +633,18 @@ class PrimalHybrid:
            costs.
 
         """
+        if precise_cost and params.Xs.is_sparse and zeta > 0:
+            best_cost, hw = Cost(rop=oo), 0
+            while hw <= min(params.Xs.hamming_weight, zeta):
+                cost = PrimalHybrid.cost_precise(
+                    params, beta, zeta, hw, babai, mitm, red_shape_model, red_cost_model, log_level
+                )
+                if cost > best_cost:
+                    break
+                best_cost = cost
+                hw += 1
+            return best_cost
+
         beta_params = PrimalHybrid.beta_params(beta=beta,
                                                params=params,
                                                zeta=zeta,
@@ -578,6 +680,7 @@ class PrimalHybrid:
                 d=beta_params["d"],
                 red_shape_model=red_shape_model,
                 red_cost_model=red_cost_model,
+                precise_cost=precise_cost,
             )
             min_hw = max(0, zeta - params.n + params.Xs.hamming_weight)
             max_hw = min(params.Xs.hamming_weight, zeta)
@@ -588,47 +691,34 @@ class PrimalHybrid:
                 if new_cost["rop"] > cost["rop"]:
                     # cost has started increasing, time to stop
                     return cost
+                if zeta > 0:
+                    new_cost['h_'] = hw
                 cost = new_cost
             return cost
 
-        else:
-            # we have the search_space and hit probability
-            svp_cost = beta_params["svp_cost"].repeat(ssf(search_space))
-            probability = hit_probability
-
+        # we have the search_space and hit probability
+        svp_cost = beta_params["svp_cost"].repeat(ssf(search_space))
+        probability = hit_probability
         probability *= beta_params["babai_probability"]
         probability *= beta_params["mitm_probability"]
 
         bkz_cost = beta_params["bkz_cost"]
-        ret = Cost()
-        ret["rop"] = bkz_cost["rop"] + svp_cost["rop"]
-        ret["red"] = bkz_cost["rop"]
-        ret["svp"] = svp_cost["rop"]
-        ret["beta"] = beta
-        ret["eta"] = beta_params["eta"]
-        ret["zeta"] = zeta
-        ret["|S|"] = search_space
-        ret["d"] = beta_params["d"]
-        ret["prob"] = probability
-
-        ret.register_impermanent(
-            {"|S|": False},
-            rop=True,
-            red=True,
-            svp=True,
-            eta=False,
-            zeta=False,
-            prob=False,
-        )
+        ret = Cost({
+            "rop": bkz_cost["rop"] + svp_cost["rop"],
+            "red": bkz_cost["rop"],
+            "svp": svp_cost["rop"],
+            "beta": beta,
+            "eta": beta_params["eta"],
+            "zeta": zeta,
+            "|S|": search_space,
+            "d": beta_params["d"],
+            "prob": probability,
+        })
 
         # Repeat whole experiment ~1/prob times
-        if probability and not RR(probability).is_NaN():
-            ret = ret.repeat(
-                prob_amplify(0.99, probability),
-            )
-        else:
+        if not probability or RR(probability).is_NaN():
             return Cost(rop=oo)
-        return ret
+        return ret.repeat(prob_amplify(0.99, probability))
 
     @classmethod
     def cost_zeta(
@@ -642,6 +732,7 @@ class PrimalHybrid:
         mitm: bool = True,
         optimize_d=True,
         log_level=5,
+        precise_cost=False,
         **kwds,
     ):
         """
@@ -667,6 +758,7 @@ class PrimalHybrid:
             red_shape_model=red_shape_model,
             red_cost_model=red_cost_model,
             m=m,
+            precise_cost=precise_cost,
             **kwds,
         )
 
@@ -699,12 +791,13 @@ class PrimalHybrid:
             if new_cost["rop"] > cost["rop"]:
                 # cost has started increasing, time to stop
                 break
-            else:
-                cost = new_cost
+            if zeta > 0:
+                new_cost['h_'] = hw
+            cost = new_cost
         Logging.log("bdd", log_level, f"H1: {cost!r}")
 
         # step 2. optimize d
-        if cost and cost.get("tag", "XXX") != "usvp" and optimize_d:
+        if cost and cost.get("tag", "XXX") != "usvp" and optimize_d and params.n < cost["d"] + cost["zeta"] + 1:
             with local_minimum(
                 params.n - zeta, cost["d"] + 1, log_level=log_level + 1
             ) as it:
@@ -726,6 +819,7 @@ class PrimalHybrid:
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
         log_level=1,
+        precise_cost=False,
         **kwds,
     ):
         """
@@ -759,7 +853,7 @@ class PrimalHybrid:
         EXAMPLES::
 
             >>> from estimator import *
-            >>> params = schemes.Kyber512.updated(Xs=ND.SparseTernary(16))
+            >>> params = schemes.Kyber512.updated(Xs=ND.SparseTernary(32, 16))
             >>> LWE.primal_hybrid(params, mitm=False, babai=False)
             rop: ≈2^87.9, red: ≈2^87.2, svp: ≈2^86.5, β: 127, η: 18, ζ: 303, |S|: ≈2^45.9, d: 409, prob: ≈2^-19.4, ↻...
 
@@ -812,56 +906,35 @@ class PrimalHybrid:
             mitm=mitm,
             m=m,
             log_level=log_level + 1,
+            precise_cost=precise_cost,
         )
 
         if zeta is None:
+            f = partial(f, optimize_d=False, **kwds)
+
             # primal_hybrid cost is generally parabolic with zeta.
             # We find a range [min_zeta, max_zeta] such that cost is finite over the entire interval.
+            min_zeta, max_zeta = 0, params.n - 1
 
-            # we search for min_zeta such that cost(min_zeta) is finite, but cost(min_zeta - 1) is infinite.
-            cost_min_zeta = f(zeta=0, optimize_d=False, **kwds)
-            if cost_min_zeta["rop"] < oo:
-                min_zeta = 0
-            else:
-                min_zeta_lower = 0
-                min_zeta_upper = params.n - 1
-                min_zeta = (min_zeta_upper + min_zeta_lower) // 2
-                while min_zeta_upper - min_zeta_lower > 1:
-                    cost_min_zeta = f(min_zeta, optimize_d=False, **kwds)
-                    if cost_min_zeta["rop"] < oo:
-                        min_zeta_upper = min_zeta
-                    else:
-                        min_zeta_lower = min_zeta
-                    min_zeta = (min_zeta_upper + min_zeta_lower) // 2
+            # we search for min_zeta such that cost(min_zeta) is finite and cost(min_zeta - 1) is infinite.
+            cost_min_zeta = f(min_zeta)
+            if cost_min_zeta["rop"] == oo:
+                min_zeta = binary_search(lambda z: f(z)["rop"] < oo, min_zeta, max_zeta)
 
-            # we search for max_zeta such that cost(max_zeta) is finite, but cost(max_zeta + 1) is infinite.
-            cost_max_zeta = f(zeta=params.n-1, optimize_d=False, **kwds)
-            if cost_max_zeta["rop"] < oo:
-                max_zeta = params.n - 1
-            else:
-                max_zeta_lower = 0
-                max_zeta_upper = params.n - 1
-                max_zeta = (max_zeta_upper + max_zeta_lower) // 2
-                while max_zeta_upper - max_zeta_lower > 1:
-                    cost_max_zeta = f(max_zeta, optimize_d=False, **kwds)
-                    if cost_max_zeta["rop"] < oo:
-                        max_zeta_lower = max_zeta
-                    else:
-                        max_zeta_upper = max_zeta
-                    max_zeta = (max_zeta_upper + max_zeta_lower) // 2
+            # we search for max_zeta such that cost(max_zeta) is finite and cost(max_zeta + 1) is infinite.
+            cost_max_zeta = f(max_zeta)
+            if cost_max_zeta["rop"] == oo:
+                max_zeta = binary_search(lambda z: f(z)["rop"] == oo, min_zeta, max_zeta) - 1
 
-            ret = minimize_scalar(lambda x: log(f(zeta=round(x), optimize_d=False,
-                                                  **kwds)["rop"]), bounds=(min_zeta, max_zeta), method="bounded")
-
+            ret = minimize_scalar(lambda x: log(f(round(x))["rop"]), bounds=(min_zeta, max_zeta), method="bounded")
             zeta = int(ret.x)
-            cost = f(zeta=zeta, optimize_d=False, **kwds)
+
+            # minimize_scalar fits to a parabola. This can cause this search to miss minima at extrema
+            cost = min(cost_min_zeta, f(zeta), cost_max_zeta)
             # check a small neighborhood of this zeta
             precision = 3
-            for zeta in range(max(0, zeta - precision), min(params.n, zeta + precision) + 1):
-                cost = min(cost, f(zeta=zeta, optimize_d=False, **kwds))
-            # minimize_scalar fits to a parabola. This can cause this search to miss minima at extrema
-            cost = min(cost, cost_min_zeta, cost_max_zeta)
-
+            for zeta_ in range(max(min_zeta + 1, zeta - precision), min(max_zeta, zeta + precision + 1)):
+                cost = min(cost, f(zeta_))
         else:
             cost = f(zeta=zeta)
 
