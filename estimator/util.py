@@ -1,10 +1,11 @@
 import itertools as it
+from math import lgamma
 from multiprocessing import Pool
 from functools import partial
 from dataclasses import dataclass, field
 from typing import Any, Callable, NamedTuple
 
-from sage.all import ceil, floor, log, oo, RR, cached_function, zeta
+from sage.all import ceil, floor, log, oo, pi, RR, cached_function, zeta
 
 from .io import Logging
 from .lwe_parameters import LWEParameters
@@ -41,6 +42,20 @@ small_slope_t8 = {2: 0.04473, 3: 0.04472, 4: 0.04402, 5: 0.04407, 6: 0.04334, 7:
                   45: 0.02583, 46: 0.02559, 47: 0.02534, 48: 0.02514, 49: 0.02506, 50: 0.02493, 51: 0.02475,
                   52: 0.02454, 53: 0.02441, 54: 0.02427, 55: 0.02407, 56: 0.02393, 57: 0.02371, 58: 0.02366,
                   59: 0.02341, 60: 0.02332}
+
+
+@cached_function
+def ball_log_vol(n):
+    return RR((n/2.) * log(pi) - lgamma(n/2. + 1))
+
+
+def log_gh(d, logvol=0):
+    """
+    Gaussian Heuristic in dimension `d`.
+    """
+    if d <= 50:
+        return RR(gh_constant[d] + logvol/d)
+    return RR(1./d * (logvol - ball_log_vol(d)))
 
 
 @dataclass
@@ -154,20 +169,6 @@ class local_minimum_base:
         return self._best.high
 
     def update(self, res):
-        """
-
-        TESTS:
-
-        We keep cache old inputs in ``_all_x`` to prevent infinite loops::
-
-            >>> from estimator.util import binary_search
-            >>> from estimator.cost import Cost
-            >>> f = lambda x, log_level=1: Cost(rop=1) if x >= 19 else Cost(rop=2)
-            >>> binary_search(f, 10, 30, "x")
-            rop: 1
-
-        """
-
         Logging.log("bins", self._log_level, f"({self._last_x}, {repr(res)})")
 
         self._all_x.add(self._last_x)
@@ -355,31 +356,24 @@ class early_abort_range:
             self._next_x = None
 
 
-def binary_search(
-    f, start, stop, param, step=1, smallerf=lambda x, best: x <= best, log_level=5, *args, **kwds
-):
+def binary_search(f, start: int, stop: int):
     """
-    Searches for the best value in the interval [start,stop] depending on the given comparison function.
+    return the smallest `i \\in {start, ..., stop}` such that f(i) = True, assuming:
+
+    - f is of the form {False, ..., False, True, ..., True},
+    - f(start) = False, and
+    - f(stop) = True,
 
     :param start: start of range to search (inclusive)
     :param stop: stop of range to search (inclusive)
-    :param param: the parameter to modify when calling `f`
-    :param smallerf: comparison is performed by evaluating ``smallerf(current, best)``
-    :param step: initially only consider every `step`-th value
     """
-
-    with local_minimum(start, stop + 1, step, smallerf=smallerf, log_level=log_level) as it:
-        for x in it:
-            kwds_ = dict(kwds)
-            kwds_[param] = x
-            it.update(f(*args, **kwds_))
-
-        for x in it.neighborhood:
-            kwds_ = dict(kwds)
-            kwds_[param] = x
-            it.update(f(*args, **kwds_))
-
-        return it.y
+    while stop > start + 1:
+        mid = (stop + start) // 2
+        if f(mid):
+            stop = mid
+        else:
+            start = mid
+    return stop
 
 
 def _batch_estimatef(f, x, log_level=0, f_repr=None, catch_exceptions=True):

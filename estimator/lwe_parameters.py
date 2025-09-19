@@ -112,7 +112,6 @@ class LWEParameters:
             return self
         if self.m == oo:
             return self
-        d = dict(self.__dict__)
 
         if self.Xe.mean != 0:
             raise NotImplementedError("Amplifying for μ≠0 not implemented.")
@@ -122,10 +121,7 @@ class LWEParameters:
             #  -two signs per position (+1,-1)
             # - all "-" and all "+" are the same
             if binomial(self.m, k) * 2**k - 1 >= m:
-                Xe = DiscreteGaussian(float(sqrt(k) * self.Xe.stddev))
-                d["Xe"] = Xe
-                d["m"] = ceil(m)
-                return LWEParameters(**d)
+                return self.updated(Xe=DiscreteGaussian(float(sqrt(k) * self.Xe.stddev)), m=ceil(m))
         else:
             raise NotImplementedError(
                 f"Cannot amplify to ≈2^{log(m, 2):1} using {{+1,-1}} additions."
@@ -158,14 +154,9 @@ class LWEParameters:
         if scale > 1 / sqrt(2):
             return self
 
-        return LWEParameters(
-            self.n,
-            p,
-            Xs=self.Xs,
-            Xe=DiscreteGaussian(sqrt(2) * self.Xe.stddev * scale),
-            m=self.m,
-            tag=f"{self.tag},scaled" if self.tag else None,
-        )
+        new_Xe = DiscreteGaussian(sqrt(2) * self.Xe.stddev * scale)
+        new_tag = f"{self.tag},scaled" if self.tag else None
+        return self.updated(q=p, Xe=new_Xe, tag=new_tag)
 
     def __hash__(self):
         return hash((self.n, self.q, self.Xs, self.Xe, self.m, self.tag))
