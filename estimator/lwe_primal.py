@@ -15,7 +15,7 @@ from .reduction import cost as costf
 from .util import local_minimum
 from .util import binary_search
 from .cost import Cost
-from .lwe_parameters import LWEParameters
+from .lwe_parameters import LWEParameters, ModuleLWEParameters
 from .simulator import normalize as simulator_normalize
 from .simulator import GSA
 from .prob import guessing_set_and_hit_probability
@@ -474,6 +474,13 @@ class PrimalHybrid:
         # TODO: this is rather clumsy as a model
         svp_cost = svp_cost.repeat(RR(sqrt(num_guesses) if mitm else num_guesses))
 
+        # Consider module structure
+        if type(params) is ModuleLWEParameters and p * params.ringdeg < 1:
+            # assume all rotations of `s` are independent:
+            p = 1.0 - (1.0 - p)**params.ringdeg
+            svp_cost = svp_cost.repeat(RR(params.ringdeg))
+            # Effectively, we only have to run BKZ once for `ringdeg` ('independent') iterations.
+
         if mitm:
             assert babai is True  # TODO: analyze probability when not using Babai NP.
             # p_adm:
@@ -666,7 +673,6 @@ class PrimalHybrid:
                 return RR(sqrt(x))
             else:
                 return x
-
         # if no search_space provided, we determine the optimal one recursively
         if search_space is None or hit_probability is None:
             f = partial(
@@ -699,6 +705,14 @@ class PrimalHybrid:
         # we have the search_space and hit probability
         svp_cost = beta_params["svp_cost"].repeat(ssf(search_space))
         probability = hit_probability
+
+        # Consider module structure
+        if type(params) is ModuleLWEParameters and probability * params.ringdeg < 1:
+            # Effectively, we only have to run BKZ once for `ringdeg` ('independent') iterations.
+            svp_cost = svp_cost.repeat(RR(params.ringdeg))
+            # assume all rotations of `s` are independent:
+            probability = 1.0 - (1.0 - probability)**params.ringdeg
+
         probability *= beta_params["babai_probability"]
         probability *= beta_params["mitm_probability"]
 

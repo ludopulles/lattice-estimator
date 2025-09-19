@@ -78,7 +78,7 @@ class LWEParameters:
 
             >>> from estimator import *
             >>> schemes.Kyber512
-            LWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512')
+            ModuleLWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512', ringdeg=256, rank=2)
             >>> schemes.Kyber512.updated(m=1337)
             LWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=1337, tag='Kyber 512')
 
@@ -98,7 +98,7 @@ class LWEParameters:
             >>> from sage.all import binomial, log
             >>> from estimator import *
             >>> schemes.Kyber512
-            LWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512')
+            ModuleLWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512', ringdeg=256, rank=2)
             >>> schemes.Kyber512.amplify_m(2**100)
             LWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=4.58), m=..., tag='Kyber 512')
 
@@ -160,3 +160,38 @@ class LWEParameters:
 
     def __hash__(self):
         return hash((self.n, self.q, self.Xs, self.Xe, self.m, self.tag))
+
+
+@dataclass
+class ModuleLWEParameters(LWEParameters):
+    """The parameters for a Learning With Errors problem instance, using module structure."""
+
+    ringdeg: int = 1  #: use module structure using ring R = Z[X] / (X^{ringdeg} + 1), for `ringdeg` a power of two.
+    rank: int = 1  #: rank of the R-module
+
+    def __init__(self, ringdeg: int, rank: int, q, Xs: NoiseDistribution, Xe: NoiseDistribution,
+                 m: int = oo, tag: str = None):
+        assert (self.ringdeg & (self.ringdeg - 1)) == 0, "`ringdeg` must be a power of two"
+        self.ringdeg = ringdeg
+        self.rank = rank
+        super().__init__(self.ringdeg * self.rank, q, Xs, Xe, m, tag)
+
+    def __hash__(self):
+        return hash((super().__hash__(), self.ringdeg, self.rank))
+
+    def unstructured(self):
+        """
+        Return the unstructured LWEParameters, forgetting the module structure.
+        """
+        return LWEParameters(self.n, self.q, self.Xs, self.Xe, self.m, self.tag)
+
+    def updated(self, **kwds):
+        """
+        Return a new set of (unstructured parameters) updated according to ``kwds``.
+        """
+        return self.unstructured().updated(**kwds)
+
+
+def RingLWEParameters(n: int, q, Xs: NoiseDistribution, Xe: NoiseDistribution, m: int = oo, tag: str = None):
+    """Return parameters for a Learning With Errors problem instance, using ring structure."""
+    return ModuleLWEParameters(n, 1, q, Xs, Xe, m, tag)

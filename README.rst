@@ -35,7 +35,7 @@ Usage examples:
     
     >>> from estimator import *
     >>> schemes.Kyber512
-    LWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512')
+    ModuleLWEParameters(n=512, q=3329, Xs=D(σ=1.22), Xe=D(σ=1.22), m=512, tag='Kyber 512', ringdeg=256, rank=2)
 
     >>> LWE.primal_usvp(schemes.Kyber512)
     rop: ≈2^143.8, red: ≈2^143.8, δ: 1.003941, β: 406, d: 998, tag: usvp
