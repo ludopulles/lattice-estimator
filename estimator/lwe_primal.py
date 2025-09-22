@@ -23,10 +23,6 @@ from .conf import red_cost_model as red_cost_model_default
 from .conf import red_shape_model as red_shape_model_default
 from .conf import red_simulator as red_simulator_default
 
-import os
-import time
-import matplotlib.pyplot as plt
-
 
 class PrimalUSVP:
     """
@@ -267,8 +263,8 @@ class PrimalUSVP:
         # step 1. find β
 
         with local_minimum(
-            max(cost_gsa["beta"] - ceil(0.20 * cost_gsa["beta"]), 40),
-            max(cost_gsa["beta"] + ceil(0.40 * cost_gsa["beta"]), 40),
+            max(cost_gsa["beta"] - ceil(0.10 * cost_gsa["beta"]), 40),
+            max(cost_gsa["beta"] + ceil(0.20 * cost_gsa["beta"]), 40),
         ) as it:
             for beta in it:
                 it.update(f(beta=beta, **kwds))
@@ -293,14 +289,14 @@ class PrimalUSVP:
 
 primal_usvp = PrimalUSVP()
 
-import numpy as np
-
 
 def save_and_plot_profile(r_np, outdir=".", prefix="prof", meta=None):
     """
     Saves r to .npy and plots it.
     meta: optional dict (e.g., {"beta": cost["beta"], "n": params.n}) to tag filename/title.
     """
+    import os, numpy as np
+
     os.makedirs(outdir, exist_ok=True)
 
     # Build filename with quick metadata if available
@@ -314,34 +310,6 @@ def save_and_plot_profile(r_np, outdir=".", prefix="prof", meta=None):
     np.save(fname, r_np)
     print(f"Saved profile to: {fname}")
     return fname
-
-def estimate_target_upper_bound_ternary_vec(n, w, sigma, k, m, q):
-    """
-    Calcule une borne supérieure sur la norme du vecteur cible pour LWE ternaire.
-
-    - On répartit uniformément les w composantes 'secret' de valeur x
-      dans un tableau de longueur (n-k), le reste étant des zéros.
-    - Ensuite on concatène m composantes d'erreur à y*ceil(sigma),
-      puis le coefficient de Kannan y*sigma.
-    """
-    # 1) Calcul de nu et approximation rationnelle
-    nu = sigma * sqrt((n - k) / w)
-    x,y = int(nu), 1 # always round even if it's not the same as real code
-    # 2) Répartition uniforme des w valeurs 'secret' dans n-k créneaux
-    secret_zone = np.zeros(n - k, dtype=float)
-    # positions uniformes arrondies
-    positions = np.floor(np.linspace(0, (n - k) - 1, w)).astype(int)
-    secret_zone[positions] = x
-
-    # 3) Partie erreur : m composantes à y * ceil(sigma)
-    error_part = np.full(m, y * ceil(sigma), dtype=float)
-
-    # 4) Coefficient de Kannan
-    kannan_coeff = np.array([y * sigma], dtype=float)
-
-    # 5) Construction du vecteur final
-    vec_bound = np.concatenate([secret_zone, error_part, kannan_coeff])
-    return vec_bound
 
 
 class PrimalHybrid:
@@ -425,10 +393,9 @@ class PrimalHybrid:
             return Cost(rop=oo)
 
         xi = PrimalUSVP._xi_factor(params.Xs.resize(params.n - zeta), params.Xe)
-        tau = 1
+        tau = round(float(params.Xe.stddev))
         # 1. Simulate BKZ-β
         # TODO: pick τ as non default value
-        tau = round(float(params.Xe.stddev))
 
         if params._homogeneous:
             tau = False
@@ -439,35 +406,17 @@ class PrimalHybrid:
         bkz_cost = costf(red_cost_model, beta, d)
 
         # 2. Required SVP dimension η
-        # # Vérif Babai sur le profil estimé
-        # h = getattr(params.Xs, "hamming_weight", 0)
-        # u_rest = h - 2
-        # y_est = 1.0
-        # m_eff = int(m) if m is not oo else int(d - (params.n - zeta))
-        # vec_bound = estimate_target_upper_bound_ternary_vec(
-        #     n=params.n, w=getattr(params.Xs, "hamming_weight", 0),
-        #     sigma=float(params.Xe.stddev),
-        #     k=zeta, m=m_eff, q=params.q
-        # )
-        # ok_babai, worst_i, worst_margin, margins_diag = PrimalHybrid.babai_feasible(
-        #     r, vec_bound=vec_bound, safety=0.85
-        # )
-
-        # P_babai = PrimalHybrid.babai_prob_expected(
-        #     r, D=params.Xe, y=y_est, m=m_eff, u_rest=u_rest, kappa=1.0, safety=1.0
-        # )
-        # target_success = 0.9 
         if babai:
             eta = 2
             svp_cost = PrimalHybrid.babai_cost(d - (params.n - zeta)) # reduce it by checking only the error part
         else:
+            # we scaled the lattice so that χ_e is what we want
             eta = PrimalHybrid.svp_dimension(r, params.Xe)
-            eta = max(eta,70) # just the same as BKZ G6K is much a overhead if < 70
-                
+
             if eta > d:
-                    # Lattice reduction was not strong enough to "reveal" the LWE solution.
-                    # A larger `beta` should perhaps be attempted.
-                    return Cost(rop=oo)
+                # Lattice reduction was not strong enough to "reveal" the LWE solution.
+                # A larger `beta` should perhaps be attempted.
+                return Cost(rop=oo)
             svp_cost = costf(red_cost_model, eta, eta)
             # when η ≪ β, lifting may be a bigger cost
             svp_cost["rop"] += PrimalHybrid.babai_cost(d - eta)["rop"]
@@ -497,9 +446,9 @@ class PrimalHybrid:
                     new_search_space = binomial(zeta, hw + 1) * base**(hw + 1)
                     if svp_cost.repeat(ssf(new_search_space))["rop"] >= bkz_cost["rop"]:
                         break
+                    hw += 1
                     search_space = new_search_space
                     probability = prob_drop(params.n, h, zeta, fail=hw)
-                    hw += 1
             else:
                 probability = prob_drop(params.n, h, zeta, fail=hw)
                 search_space = binomial(zeta, hw) * base**hw
@@ -591,9 +540,9 @@ class PrimalHybrid:
             **kwds,
         )
 
-        # step 1. optimize β # keep lower bound it can be useful
+        # step 1. optimize β
         with local_minimum(
-            40, baseline_cost["beta"] + 50, precision=1, log_level=log_level + 1
+            40, baseline_cost["beta"] + 1, precision=2, log_level=log_level + 1
         ) as it:
             for beta in it:
                 it.update(f(beta))
@@ -605,6 +554,7 @@ class PrimalHybrid:
 
         # step 2. optimize d
         if cost and cost.get("tag", "XXX") != "usvp" and optimize_d:
+
             with local_minimum(
                 params.n, cost["d"] + cost["zeta"] + 1, log_level=log_level + 1
             ) as it:
@@ -625,7 +575,7 @@ class PrimalHybrid:
         mitm: bool = True,
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
-        log_level=5,
+        log_level=1,
         **kwds,
     ):
         """
