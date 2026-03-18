@@ -1,14 +1,28 @@
 # -*- coding: utf-8 -*-
-from sage.all import binomial, ZZ, log, ceil, RealField, oo, exp, pi
+"""
+EXAMPLES::
+        >>> from estimator import prob
+    >>> from estimator.nd import SparseTernary
+    >>> # guess no coordinates: we will do one guess, and hit with probability 1
+    >>> prob.guessing_set_and_hit_probability(0, SparseTernary(16, 16, 512), 0)
+    (1, 1.0)
+    >>> # guess 16 coordinates are all zero
+    >>> prob.guessing_set_and_hit_probability(16, SparseTernary(16, 16, 512), 0)
+    (1, 0.350436753852275)
+    >>> # guess 16 coordinates have total Hamming weight at most 1
+    >>> prob.guessing_set_and_hit_probability(16, SparseTernary(16, 16, 512), 1)
+    (33, 0.736293996803598)
+
+"""
+
+from sage.all import binomial, ZZ, log, ceil, RealField, oo, exp, RDF, cached_function
 from sage.all import RealDistribution, RR, sqrt, prod, erf
 from .conf import max_n_cache
-from .util import LazyEvaluation
+from .nd import NoiseDistribution
 
-
-chisquared_CDF = LazyEvaluation(
-    lambda i: RealDistribution('chisquared', i).cum_distribution_function,
-    2*max_n_cache
-)
+chisquared_table = {i: None for i in range(2*max_n_cache+1)}
+for i in range(2*max_n_cache+1):
+    chisquared_table[i] = RealDistribution('chisquared', i)
 
 
 def conditional_chi_squared(d1, d2, lt, l2):
@@ -38,8 +52,8 @@ def conditional_chi_squared(d1, d2, lt, l2):
         >>> prob.conditional_chi_squared(100, 5, 50, .7)
         5.4021875103989546e-06
     """
-    D1 = chisquared_CDF[d1]
-    D2 = chisquared_CDF[d2]
+    D1 = chisquared_table[d1].cum_distribution_function
+    D2 = chisquared_table[d2].cum_distribution_function
     l2 = RR(l2)
 
     PE2 = D2(l2)
@@ -96,7 +110,9 @@ def mitm_babai_probability(r, stddev, fast=False):
     # Note: `r` contains *square norms*, so convert to non-square norms.
     # Follow the proof of Lemma 4.2 [WAHC:SonChe19]_, because that one uses standard deviation.
     xs = [sqrt(.5 * ri) / stddev for ri in r]
-    p = prod(RR(erf(x) - (1 - exp(-x**2)) / (x * sqrt(pi))) for x in xs)
+    # Using RDF.pi() to prevent memory leakage:
+    # see https://ask.sagemath.org/question/45863/memory-usage-strictly-increasing-on-sage-interactive-shell/
+    p = prod(RR(erf(x) - (1 - exp(-x**2)) / (x * sqrt(RDF.pi()))) for x in xs)
     assert 0.0 <= p <= 1.0
     return p
 
@@ -193,5 +209,67 @@ def amplify_sigma(target_advantage, sigma, q):
     if sigma > 16 * q:
         return oo
 
-    advantage = float(exp(-float(pi) * (float(sigma / q) ** 2)))
+    # Using RDF.pi() to prevent memory leakage:
+    # see https://ask.sagemath.org/question/45863/memory-usage-strictly-increasing-on-sage-interactive-shell/
+    advantage = float(exp(-float(RDF.pi()) * (float(sigma / q) ** 2)))
     return amplify(target_advantage, advantage, majority=True)
+
+
+@cached_function
+def guessing_set_and_hit_probability(zeta: int, dist: NoiseDistribution, hw: int):
+    """
+    Guessing set and corresponding hit probability for guessing ζ coordinates from a vector drawn from `dist`.
+    We guess all such subvectors up to Hamming weight `hw`, and compute the probability that at least one of
+    these guesses is correct. We return the raw guessing set size, i.e., no MitM speedup.
+
+    :param zeta: the length of the subvector we guess
+    :param dist: the distribution from which the entire vector is drawn
+    :param hw: the maximum Hamming weight of the subvectors we guess
+
+    :returns: a tuple (search_space, hit_probability) where `search_space` is the number of guesses, and
+    `hit_probability` is the probability that at least one of these guesses is correct.
+
+    """
+    if zeta > dist.n:
+        raise ValueError(f"Trying to guess {zeta} coordinates of a vector of length {dist.n}")
+
+    if zeta == 0:
+        # no guessing to do: we will do one call, and hit with probability 1
+        search_space = 1
+        hit_probability = 1.0
+        return search_space, hit_probability
+
+    else:
+        # we form the set of all vectors of weight hw when drawing from dist
+        # the total number of non-zero entries
+        h = dist.hamming_weight
+        # e.g. (-1, 1) -> two non-zero per entry
+        base = dist.bounds[1] - dist.bounds[0]
+        # our starting hw
+        min_hw = max(0, zeta - dist.n + h)
+        max_hw = min(zeta, h)
+
+        if hw < min_hw:
+            raise ValueError(f"hw={hw} < min feasible hw={min_hw}")
+        if hw > max_hw:
+            raise ValueError(f"hw={hw} > max feasible hw={max_hw}")
+
+        # calculate the number of elements of exactly hw and the probability this segment has weight exactly hw
+        if hw == 0:
+            search_space = binomial(zeta, hw)
+        elif base == oo:
+            search_space = oo
+        else:
+            search_space = binomial(zeta, hw) * base**hw
+
+        probability = RR(drop(dist.n, h, zeta, fail=hw))
+
+        if hw > min_hw:
+            # recurse using cached values for smaller hw
+            prev_search_space, prev_probability = guessing_set_and_hit_probability(
+                zeta, dist, hw - 1
+            )
+            search_space += prev_search_space
+            probability += prev_probability
+
+        return search_space, probability
