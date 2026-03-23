@@ -473,7 +473,7 @@ class PrimalHybrid:
         svp_cost = svp_cost.repeat(RR(sqrt(num_guesses) if mitm else num_guesses))
 
         # Consider module structure
-        if type(params) is ModuleLWEParameters:
+        if type(params) is ModuleLWEParameters and p * params.ringdeg < 1:
             # assume all rotations of `s` are independent:
             p = 1.0 - (1.0 - p)**params.ringdeg
             svp_cost = svp_cost.repeat(RR(params.ringdeg))
@@ -699,7 +699,7 @@ class PrimalHybrid:
         probability = hit_probability
 
         # Consider module structure
-        if type(params) is ModuleLWEParameters:
+        if type(params) is ModuleLWEParameters and probability * params.ringdeg < 1:
             # Effectively, we only have to run BKZ once for `ringdeg` ('independent') iterations.
             svp_cost = svp_cost.repeat(RR(params.ringdeg))
             # assume all rotations of `s` are independent:
