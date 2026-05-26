@@ -91,21 +91,16 @@ class Odlyzko:
         :return: the cost to run this attack
         """
         # Check for ternary instead of sparse ternary.
-        assert type(params.Xs) is SparseTernary, "Secret distribution has to be ternary."
-        # Note: Odlyzko easily extends beyond "mean = 0
-        assert params.Xs.mean == 0, "Expected #1's == #-1's."
+        assert isinstance(params.Xs, SparseTernary), "Secret distribution has to be ternary."
         assert params.Xe.is_bounded, "Error distribution has to be bounded."
 
-        n, w0 = params.n, params.Xs.hamming_weight // 2
-
-        nl, nr = split_weight(n)
-        wl, wr = split_weight(w0)
+        s_l, s_r = params.Xs.split_balanced((params.n + 1) // 2)
 
         # Odlyzko splits s into s = (s_1 || s_2), where s_1 should be of weight wl and s_2 of
         # weight wr.
-        log_S1, log_S2 = log_comb(nl, wl, wl), log_comb(nr, wr, wr)
-        log_probability = log_S1 + log_S2 - log_comb(n, w0, w0)
-        log_runtime = sum_log(log_S1, log_S2)
+        log_S1, log_S2 = log(RR(s_l.support_size())), log(RR(s_r.support_size()))
+        log_probability = log_S1 + log_S2 - log(RR(params.Xs.support_size()))
+        log_runtime = sum_log(log_S1, log_S2)  # log(S1) + log(S2) ~ log(max(S1, S2))
         repetitions = prob_amplify(target_probability, exp(log_probability))
 
         cost = Cost(rop=exp(log_runtime), mem=exp(log_runtime)).repeat(repetitions)
@@ -159,8 +154,7 @@ class MeetREP0:
 
         # Check for ternary instead of sparse ternary.
         assert isinstance(params.Xs, SparseTernary), "Secret distribution has to be ternary."
-        assert params.Xs.ones is not None, "Expected #1's == #-1's."
-        assert 2 * params.Xs.ones == params.Xs._hw, "Expected #1's == #-1's."
+        assert params.Xs.ones is not None and 2 * params.Xs.ones == params.Xs.hamming_weight, "Expected #1's == #-1's."
         assert params.Xe.is_bounded, "Error distribution has to be bounded."
 
         n, logq = params.n, RR(log(params.q))
@@ -367,9 +361,8 @@ class MeetREP1:
         # params = LWEParameters.normalize(params)
 
         # Check for ternary instead of sparse ternary.
-        assert type(params.Xs) is SparseTernary, "Secret distribution has to be ternary."
-        assert 2 * params.Xs.ones == params.Xs.hamming_weight
-        assert params.Xs.mean == 0, "Expected #1's == #-1's."
+        assert isinstance(params.Xs, SparseTernary), "Secret distribution has to be ternary."
+        assert params.Xs.ones is not None and 2 * params.Xs.ones == params.Xs.hamming_weight, "Expected #1's == #-1's."
         assert params.Xe.is_bounded, "Error distribution has to be bounded."
 
         n, logq = params.n, RR(log(params.q))
@@ -462,9 +455,8 @@ class MeetREP1:
         # params = LWEParameters.normalize(params)
 
         # Check for ternary instead of sparse ternary.
-        assert type(params.Xs) is SparseTernary, "Secret distribution has to be ternary."
-        assert 2 * params.Xs.ones == params.Xs.hamming_weight
-        assert params.Xs.mean == 0, "Expected #1's == #-1's."
+        assert isinstance(params.Xs, SparseTernary), "Secret distribution has to be ternary."
+        assert params.Xs.ones is not None and 2 * params.Xs.ones == params.Xs.hamming_weight, "Expected #1's == #-1's."
         assert params.Xe.is_bounded, "Error distribution has to be bounded."
 
         n, logq = params.n, RR(log(params.q))

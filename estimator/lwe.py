@@ -136,16 +136,17 @@ class Estimate:
         algorithms["bkw"] = coded_bkw
 
         # Combinatorial Attack
-        if isinstance(params.Xs, SparseTernary) and params.Xe.is_bounded and params.Xs.mean == 0:
+        if isinstance(params.Xs, SparseTernary) and params.Xe.is_bounded:
             algorithms['odlyzko'] = partial(
                 odlyzko, red_cost_model=red_cost_model, red_shape_model=red_shape_model
             )
-            algorithms['may_rep_0'] = partial(
-                meet_rep0, red_cost_model=red_cost_model, red_shape_model=red_shape_model
-            )
-            algorithms['may_rep_1'] = partial(
-                meet_rep1, red_cost_model=red_cost_model, red_shape_model=red_shape_model
-            )
+            if (params.Xs.ones is not None and 2 * params.Xs.ones == params.Xs.hamming_weight):
+                algorithms['may_rep_0'] = partial(
+                    meet_rep0, red_cost_model=red_cost_model, red_shape_model=red_shape_model
+                )
+                algorithms['may_rep_1'] = partial(
+                    meet_rep1, red_cost_model=red_cost_model, red_shape_model=red_shape_model
+                )
 
         # Primal Attacks
         algorithms["usvp"] = partial(
@@ -170,7 +171,10 @@ class Estimate:
             red_shape_model=red_shape_model,
         )
 
-        if isinstance(params.Xs, SparseTernary) and params.Xs.m == params.Xs.p:
+        if (
+            isinstance(params.Xs, SparseTernary) and
+            (params.Xs.ones is None or 2 * params.Xs.ones == params.Xs.hamming_weight)  # [un|]balanced
+        ):
             algorithms["primal_meet"] = partial(
                 primal_meet,
                 red_cost_model=red_cost_model,

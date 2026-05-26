@@ -269,9 +269,10 @@ class PrimalMeet:
         .. note :: This is the lowest level function that runs no optimization. It merely reports costs.
 
         """
-        assert isinstance(params.Xs, SparseTernary)
-        assert (params.Xs.ones is None or  # unbalanced
-                params.Xs.ones * 2 == params.Xs.hamming_weight)  # balanced
+        assert (
+            isinstance(params.Xs, SparseTernary) and
+            (params.Xs.ones is None or 2 * params.Xs.ones == params.Xs.hamming_weight)  # [un|]balanced
+        )
 
         delta = deltaf(beta)
         n = params.n - zeta
