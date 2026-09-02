@@ -254,6 +254,77 @@ class PrimalMeet:
 
     @staticmethod
     @cached_function
+    def cost_precise(
+        params: LWEParameters,
+        beta: int,
+        zeta: int,
+        hw: int,
+        succ_prob: float,
+        red_shape_model,
+        red_cost_model,
+    ):
+        """
+        Cost of the hybrid attack, more precisely with the "optimal" xi,
+        and assume the guess is of only one weight.
+        """
+        assert zeta > 0
+
+        n = params.n - zeta
+        subparams = params.updated(n=n)
+        search_space = None
+        if params.Xs.is_sparse:
+            search_space, subparams.Xs = params.Xs.split_balanced(zeta, hw)
+
+        delta = deltaf(beta)
+        d = min(max(beta, ceil(sqrt(n * log(params.q) / log(delta)))), params.m + n)
+        xi = PrimalUSVP._xi_factor(subparams.Xs, params.Xe)
+
+        # 1. Simulate BKZ-β
+        sigma = params.Xe.stddev
+        simulator = simulator_normalize(red_shape_model)
+        r = simulator(d, n, params.q, beta, xi=xi, tau=None, dual=True)
+
+        cost_bkz = RR(costf(red_cost_model, beta, d)["rop"])
+
+        prob_np = RR(babai_gaussian(r, sigma))
+        prob_adm = RR(mitm_babai_probability(r, sigma, fast=1000))
+        prob_hw = params.Xs.split_probability(zeta, hw)
+        meet_reps = 1  # How many times can we perform MEET, after running BKZ once?
+
+        if type(params) is ModuleLWEParameters:
+            # assume all rotations of `s` are independent:
+            prob_hw = 1.0 - (1.0 - prob_hw)**params.ringdeg
+            meet_reps = params.ringdeg
+            # Effectively, we only have to run BKZ once for `ringdeg` ('independent') iterations.
+
+        # 3. Determine cost of doing Meet LWE.
+        if params.Xs.ones is None:
+            cost_meet = PrimalMeet.cost_meet_lwe_unbalanced(search_space, r, sigma, prob_adm)
+        else:
+            cost_meet = PrimalMeet.cost_meet_lwe(search_space, r, sigma, prob_adm)
+
+        probability = (
+            prob_hw  # prob. secret splits with given weights. Note: p_HW ~ 1/n roughly
+            * prob_np  # prob. correct guess lifts with np. Note: p_NP ~ 1.0 (p_NP > p_adm).
+            # * prob_adm  # prob. s = s1 + s2 has both (s1, s2) in the same bucket. (now part of MEET-LWE)
+            * cost_meet["prob"]  # prob. Meet-LWE gives the correct answer.
+        )
+
+        cost = Cost({
+            "rop": cost_bkz + meet_reps * cost_meet["rop"], "red": cost_bkz,
+            "mem": cost_meet["mem"],
+            "beta": beta, "zeta": zeta, "d": d,
+            "h_": hw, "h_1": cost_meet["h_1"], "h_2": cost_meet["h_2"],
+            "epsilon": cost_meet["epsilon"], "d_": cost_meet["dim_babai"],
+            "|S|": search_space, "prob": probability,
+        })
+
+        # 4. Repeat whole experiment ~1/prob times
+        # assert not (not probability or RR(probability).is_NaN())
+        return cost.repeat(prob_amplify(succ_prob, probability))
+
+    @staticmethod
+    @cached_function
     def cost(
         params: LWEParameters,
         beta: int,
@@ -262,6 +333,7 @@ class PrimalMeet:
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
         log_level=5,
+        precise_cost: bool = False,
     ):
         """
         Cost of the Primal Meet-LWE attack.
@@ -278,6 +350,18 @@ class PrimalMeet:
             isinstance(params.Xs, SparseTernary) and
             (params.Xs.ones is None or 2 * params.Xs.ones == params.Xs.hamming_weight)  # [un|]balanced
         )
+
+        if precise_cost and params.Xs.is_sparse and zeta > 0:
+            best_cost, hw = Cost(rop=oo), 0
+            while hw < min(params.Xs.hamming_weight, zeta):
+                cost = PrimalMeet.cost_precise(
+                    params, beta, zeta, hw, succ_prob, red_shape_model, red_cost_model
+                )
+                if cost > best_cost:
+                    break
+                best_cost = cost
+                hw += 2
+            return best_cost
 
         delta = deltaf(beta)
         n = params.n - zeta
@@ -360,6 +444,7 @@ class PrimalMeet:
         succ_prob: float = 0.99,
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
+        precise_cost: bool = False,
         log_level=5,
         **kwds,
     ):
@@ -386,6 +471,7 @@ class PrimalMeet:
             red_shape_model=red_shape_model,
             red_cost_model=red_cost_model,
             log_level=log_level + 1,
+            precise_cost=precise_cost,
             **kwds,
         )
 
@@ -418,6 +504,7 @@ class PrimalMeet:
         succ_prob: float = 0.99,
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
+        precise_cost: bool = False,
         log_level=1,
         **kwds,
     ):
@@ -433,6 +520,7 @@ class PrimalMeet:
             succ_prob=succ_prob,
             red_shape_model=red_shape_model,
             red_cost_model=red_cost_model,
+            precise_cost=precise_cost,
             log_level=log_level + 1,
         )
 
@@ -441,7 +529,7 @@ class PrimalMeet:
 
             # primal_hybrid cost is generally parabolic with zeta.
             # We find a range [min_zeta, max_zeta) such that cost is finite over the entire interval.
-            min_zeta, max_zeta = 0, params.n
+            min_zeta, max_zeta = 0, params.n - 1
 
             # we search for min_zeta such that cost(min_zeta) is finite and cost(min_zeta - 1) is infinite.
             cost_min_zeta = f(min_zeta)
