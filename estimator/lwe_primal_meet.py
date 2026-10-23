@@ -286,12 +286,6 @@ class PrimalMeet:
 
         # 1. Simulate BKZ-β
         sigma = params.Xe.stddev
-
-        log_last_GS_norm = exp((log(params.q)*(d-n) + log(xi)*n) / d - (d-1) * log(delta))
-        # if sqrt(r[-1]) < 10 * sigma:
-        if log_last_GS_norm < 10 * sigma:
-            # Lattice reduction should be sufficiently strong such that p_adm is of value >0.1 or so (e.g. 0.5).
-            return Cost(rop=oo)
         simulator = simulator_normalize(red_shape_model)
         r = simulator(d, n, params.q, beta, xi=xi, tau=None, dual=True)
 
