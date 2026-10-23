@@ -80,7 +80,7 @@ class PrimalMeet:
             # Analyse the success probability
             bet_s1 = logS[11] + logS[12] - logS[1]
             bet_s2 = logS[21] + logS[22] - logS[2]
-            assert bet_s1 < 0 and bet_s2 < 0
+            assert bet_s1 <= 0 and bet_s2 <= 0
             log_bet = bet_s1 + bet_s2
 
             # Logarithm of the number of buckets needed to have an efficient meet algorithm.
@@ -127,9 +127,11 @@ class PrimalMeet:
             if cost["rop"] < best_cost["rop"]:
                 best_cost = cost
         # Try to improve the epsilon until a worse one is found
-        while best_cost["epsilon"] == max_epsilon:
+        while best_cost["rop"] == oo or best_cost["epsilon"] == max_epsilon:
             max_epsilon += 1
             cost = cost_epsilon(max_epsilon)
+            if not cost:
+                break
             if cost["rop"] < best_cost["rop"]:
                 best_cost = cost
         return best_cost
@@ -193,7 +195,7 @@ class PrimalMeet:
             # Analyse the success probability
             bet_s1 = logS[11] + logS[12] - logS[1]
             bet_s2 = logS[21] + logS[22] - logS[2]
-            assert bet_s1 < 0 and bet_s2 < 0
+            assert bet_s1 <= 0 and bet_s2 <= 0
             log_bet = bet_s1 + bet_s2
 
             # Logarithm of the number of buckets needed to have an efficient meet algorithm.
@@ -240,9 +242,11 @@ class PrimalMeet:
             if cost["rop"] < best_cost["rop"]:
                 best_cost = cost
         # Try to improve the epsilon until a worse one is found
-        while best_cost["epsilon"] == max_epsilon:
+        while best_cost["rop"] == oo or best_cost["epsilon"] == max_epsilon:
             max_epsilon += 1
             cost = cost_epsilon(max_epsilon)
+            if not cost:
+                break
             if cost["rop"] < best_cost["rop"]:
                 best_cost = cost
 
@@ -257,6 +261,7 @@ class PrimalMeet:
         succ_prob: float = 0.99,
         red_shape_model=red_shape_model_default,
         red_cost_model=red_cost_model_default,
+        log_level=5,
     ):
         """
         Cost of the Primal Meet-LWE attack.
@@ -323,6 +328,9 @@ class PrimalMeet:
                 cost_meet = PrimalMeet.cost_meet_lwe_unbalanced(search_space, r, sigma, prob_adm)
             else:
                 cost_meet = PrimalMeet.cost_meet_lwe(search_space, r, sigma, prob_adm)
+            if cost_meet["rop"] == oo:
+                hw += 2
+                continue
 
             probability = (
                 prob_hw  # prob. secret splits with given weights. Note: p_HW ~ 1/n roughly
@@ -383,6 +391,7 @@ class PrimalMeet:
             succ_prob=succ_prob,
             red_shape_model=red_shape_model,
             red_cost_model=red_cost_model,
+            log_level=log_level + 1,
             **kwds,
         )
 
@@ -395,7 +404,7 @@ class PrimalMeet:
 
         # step 1. optimize β
         with local_minimum(
-            40, max_beta + 1, precision=2, log_level=log_level + 1
+            40, max_beta + 1, precision=2, log_level=log_level,
         ) as it:
             for beta in it:
                 it.update(f(beta))
