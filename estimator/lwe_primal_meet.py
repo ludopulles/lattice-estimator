@@ -254,15 +254,14 @@ class PrimalMeet:
         )
 
         if precise_cost and params.Xs.is_sparse and zeta > 0:
-            best_cost, hw = Cost(rop=oo), 0
-            while hw < min(params.Xs.hamming_weight, zeta):
+            best_cost = Cost(rop=oo)
+            for hw in range(0, min(params.Xs.hamming_weight, zeta), 2):
                 cost = PrimalMeet.cost_precise(
                     params, beta, zeta, hw, succ_prob, red_shape_model, red_cost_model
                 )
                 if cost > best_cost:
                     break
                 best_cost = cost
-                hw += 2
             return best_cost
 
         delta = deltaf(beta)
@@ -280,12 +279,7 @@ class PrimalMeet:
         prob_np = RR(babai_gaussian(r, sigma))
         prob_adm = RR(mitm_babai_probability(r, sigma, fast=1000))
 
-        # 2. Find the best hamming weight of the guess.
-        best_cost = Cost(rop=oo)
-
-        # i.e. iteratively increase the HW until the number of guesses becomes too much.
-        h, hw = params.Xs.hamming_weight, 0
-        while hw <= min(h, zeta):
+        def cost_hw(hw):
             search_space = params.Xs.split_balanced(zeta, hw)[0]
             prob_hw = params.Xs.split_probability(zeta, hw)
             meet_reps = 1  # How many times can we perform MEET, after running BKZ once?
@@ -296,18 +290,10 @@ class PrimalMeet:
                 meet_reps = params.ringdeg
                 # Effectively, we only have to run BKZ once for `ringdeg` ('independent') iterations.
 
-            if prob_hw < 2**-20:
-                # Very unlikely in this attack that the secret splits in this way.
-                # The best attack has very small T/p (T = runtime, p = success probability)
-                # The runtime is quite large so it also requires a somewhat large `p`.
-                hw += 2
-                continue
-
             # 3. Determine cost of doing Meet LWE.
             cost_meet = PrimalMeet.cost_meet_lwe(search_space, r, sigma, prob_adm)
             if cost_meet["rop"] == oo:
-                hw += 2
-                continue
+                return cost_meet
 
             probability = (
                 prob_hw  # prob. secret splits with given weights. Note: p_HW ~ 1/n roughly
@@ -327,12 +313,29 @@ class PrimalMeet:
 
             # 4. Repeat whole experiment ~1/prob times
             # assert not (not probability or RR(probability).is_NaN())
-            cost = cost.repeat(prob_amplify(succ_prob, probability))
+            return cost.repeat(prob_amplify(succ_prob, probability))
 
+        # First, find a HW such that prob_hw(HW) >= 2^{-10}.
+        hw, max_hw = 0, min(params.Xs.hamming_weight, zeta)
+        while hw < max_hw and params.Xs.split_probability(zeta, hw) < 2**-10:
+            hw += 2
+
+        best_cost, orig_hw = cost_hw(hw), hw
+        # Then, decrease the HW as long as cost decreases.
+        for hw_ in range(hw - 2, 0, -2):
+            cost = cost_hw(hw_)
             if cost > best_cost:
                 break
-            best_cost = min(best_cost, cost)
-            hw += 2
+            best_cost = cost
+            hw = hw_
+        if hw == orig_hw:
+            # Or, increase the HW as long as cost decreases.
+            for hw_ in range(hw + 2, max_hw, 2):
+                cost = cost_hw(hw_)
+                if cost > best_cost:
+                    break
+                best_cost = cost
+                hw = hw_
         return best_cost
 
     @classmethod
@@ -428,7 +431,7 @@ class PrimalMeet:
 
             # primal_hybrid cost is generally parabolic with zeta.
             # We find a range [min_zeta, max_zeta) such that cost is finite over the entire interval.
-            min_zeta, max_zeta = 0, params.n - 1
+            min_zeta, max_zeta = 1, params.n - 1
 
             # we search for min_zeta such that cost(min_zeta) is finite and cost(min_zeta - 1) is infinite.
             cost_min_zeta = f(min_zeta)
