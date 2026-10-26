@@ -7,7 +7,7 @@ See :ref:`LWE Primal Attacks` for an introduction what is available.
 
 """
 from functools import partial
-from sage.all import oo, cached_function, ceil, exp, floor, log, pi, RR, sqrt
+from sage.all import oo, cached_function, ceil, exp, floor, log, RR, sqrt
 
 from .conf import red_cost_model as red_cost_model_default
 from .conf import red_shape_model as red_shape_model_default
@@ -18,7 +18,7 @@ from .lwe_comb import log_comb, split_weight, sum_log
 from .lwe_parameters import LWEParameters, ModuleLWEParameters
 from .lwe_primal import primal_usvp, PrimalUSVP, PrimalHybrid
 from .nd import SparseTernary
-from .prob import babai_gaussian, mitm_babai_probability, amplify as prob_amplify
+from .prob import babai_gaussian, mitm_babai_probability, mitm_babai_probability_single, amplify as prob_amplify
 from .reduction import cost as costf, delta as deltaf
 from .simulator import normalize as simulator_normalize
 from .util import local_minimum, binary_search
@@ -30,13 +30,14 @@ class PrimalMeet:
     """
 
     @staticmethod
-    def cost_meet_lwe(search_space: SparseTernary, r: int, sigma: float, prob_adm: float):
+    def cost_meet_lwe(search_space: SparseTernary, r, sigma: float, prob_adm: float):
         """
         Compute the cost of doing REP-1 depth 2 Meet-LWE for a given search space,
 
         :param search_space: search space to perform REP-1 over.
         :param r: simulated profile of reduced basis over which to meet.
         :param sigma: stddev of error (noise).
+        :param prob_adm: admissability probability of `r`.
 
         """
         n, w, is_balanced = search_space.n, search_space.hamming_weight, search_space.ones is not None
@@ -103,42 +104,32 @@ class PrimalMeet:
             log_bet = bet_s1 + bet_s2
 
             # Logarithm of the number of buckets needed to have an efficient meet algorithm.
-            # When using less, some buckets might get overcrowded, so listing near-collisions
-            # becomes slow.
-            log_idx = RR(max(logS[1], logS[2]))
-
-            log_meet_leftover, dim_babai = log_idx, 0
-            bound_meet = RR((len(r) * sigma)**2 * 2/pi)
-            # Note: `r` contains *square norms*, so don't forget to take square roots...
-            # r = copy(r)
-
+            # When using less, some buckets might get overcrowded, so listing near-collisions becomes slow.
+            log_meet_leftover = RR(max(logS[1], logS[2]))
+            my_prob_adm, dim_babai = prob_adm, 0
+            bound_meet = RR(12 * sigma)**2
             for i in range(len(r))[::-1]:
                 dim_babai += 1
-                if r[i] > bound_meet:
-                    c_i = floor((r[i] / bound_meet)**.5)
-                    # r[i] /= c_i**2
+                if r[i] >= 4 * bound_meet:
+                    c_i = floor((r[i] / bound_meet)**.5)  # take square root, because `r` contains square norms.
+                    # Compute p_adm(r') using p_adm(r), and by recomputing only the modified part.
+                    my_prob_adm /= mitm_babai_probability_single(r[i], sigma)
+                    my_prob_adm *= mitm_babai_probability_single(r[i] / c_i**2, sigma)
                     log_meet_leftover -= RR(log(c_i))
                     if log_meet_leftover < 0:
                         break
 
             # Multiply the runtime by the number of calls to Babai in dimension `d`.
-            # And multiply the success probability with the admissibility probability.
             log_runtime += RR(log(PrimalHybrid.babai_cost(dim_babai)["rop"]))
 
-            # prob_adm = RR(mitm_babai_probability(r, sigma, fast=1000))
-            # log_bet += log(prob_adm)
-
-            # Repeat the MEET algorithm 1/ (exp(log_bet) p_{adm}) times.
+            # Repeat the MEET algorithm 1 / (exp(log_bet) my_prob_adm) times.
             # All these repetitions fail with probability of 1/e.
-            runtime, prob = RR(exp(log_runtime - log_bet) / prob_adm), RR(1 - exp(-1))
-            return Cost(
-                rop=runtime, mem=runtime, prob=prob,
-                h_1=w1, h_2=w11, epsilon=epsilon, log_idx=log_idx, dim_babai=dim_babai,
-            )
+            runtime, prob = RR(exp(log_runtime - log_bet) / my_prob_adm), RR(1 - exp(-1))
+            return Cost(rop=runtime, mem=runtime, prob=prob, h_1=w1, h_2=w11, epsilon=epsilon, d_=dim_babai)
 
         # Find the best epsilon by exhaustive search.
         # In practice, `epsilon` is 1, 2 or 3 so keep the range limited for performance.
-        best_cost = Cost(rop=oo, prob=1.0)
+        best_cost = Cost(rop=oo, mem=oo, prob=1.0)
         max_epsilon = 4
 
         # Compute costs for all `epsilon <= max_epsilon`, and pick the best.
@@ -217,7 +208,7 @@ class PrimalMeet:
             "mem": cost_meet["mem"],
             "beta": beta, "zeta": zeta, "d": d,
             "h_": hw, "h_1": cost_meet["h_1"], "h_2": cost_meet["h_2"],
-            "epsilon": cost_meet["epsilon"], "d_": cost_meet["dim_babai"],
+            "epsilon": cost_meet["epsilon"], "d_": cost_meet["d_"],
             "|S|": search_space, "prob": probability,
         })
 
@@ -307,7 +298,7 @@ class PrimalMeet:
                 "mem": cost_meet["mem"],
                 "beta": beta, "zeta": zeta, "d": d,
                 "h_": hw, "h_1": cost_meet["h_1"], "h_2": cost_meet["h_2"],
-                "epsilon": cost_meet["epsilon"], "d_": cost_meet["dim_babai"],
+                "epsilon": cost_meet["epsilon"], "d_": cost_meet["d_"],
                 "|S|": search_space, "prob": probability,
             })
 
