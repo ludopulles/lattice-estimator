@@ -79,6 +79,22 @@ def gaussian_cdf(mu, sigma, t):
     return RR((1/2)*(1 + erf((t - mu)/(sqrt(2)*sigma))))
 
 
+# Using RDF.pi() to prevent memory leakage:
+# see https://ask.sagemath.org/question/45863/memory-usage-strictly-increasing-on-sage-interactive-shell/
+_mitm_c = RR(1.0 / sqrt(RDF.pi()))
+
+
+def mitm_babai_probability_single(r_i, stddev):
+    # Note: `r_i` is a square norm, so convert to non-square norms.
+    # Follow the proof of Lemma 4.2 [WAHC:SonChe19]_, because that one uses standard deviation.
+    x_i = RR((.5 * r_i)**.5) / stddev
+    # Note: as x -> oo,
+    #     erf(x) - c*(1-e^{-x^2})/x = 1 - c/x + e^{-x^2}*O(x^{-3}).
+    if x_i > 100:
+        return RR(1.0 - _mitm_c / x_i)
+    return RR(erf(RR(x_i)) - _mitm_c * (1 - exp(-x_i**2)) / x_i)
+
+
 def mitm_babai_probability(r, stddev, fast=False):
     """
     Compute the "e-admissibility" probability associated to the MitM step, according to
@@ -91,23 +107,11 @@ def mitm_babai_probability(r, stddev, fast=False):
                  Set to false to compute the exact value.
     :return: probability for the MitM process
     """
-    # Using RDF.pi() to prevent memory leakage:
-    # see https://ask.sagemath.org/question/45863/memory-usage-strictly-increasing-on-sage-interactive-shell/
-    c = RR(1.0 / sqrt(RDF.pi()))
-
-    if fast:
+    if fast and fast < len(r):
         # Compute p_adm for the last `num_exact` coordinates exactly, and approximate the others.
-        num_exact = min(fast, len(r))
-        xs = [RR((.5 * ri)**.5) / stddev for ri in r[-num_exact:]]
-        ps = [RR(1.0 - c / x if x > 100 else erf(x) - c * (1 - exp(-x**2)) / x) for x in xs]
-        return ps[0]**(len(r) - num_exact) * prod(ps)
-
-    # Note: `r` contains *square norms*, so convert to non-square norms.
-    # Follow the proof of Lemma 4.2 [WAHC:SonChe19]_, because that one uses standard deviation.
-    xs = [RR((.5 * ri)**.5) / stddev for ri in r]
-    p = prod(RR(erf(x) - c * (1 - exp(-x**2)) / x) for x in xs)
-    assert 0.0 <= p <= 1.0
-    return p
+        p0 = mitm_babai_probability_single(r[-fast], stddev)
+        return p0**(len(r) - fast) * prod(mitm_babai_probability_single(r_i, stddev) for r_i in r[-fast:])
+    return prod(mitm_babai_probability_single(r_i, stddev) for r_i in r)
 
 
 def babai(r, norm):
